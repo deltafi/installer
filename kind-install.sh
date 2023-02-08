@@ -1,11 +1,11 @@
 #!/bin/sh
 if [ -e deltafi ]; then
   echo "'deltafi' directory already exists here!"
-  if [[ "" == '--dev' ]]; then
+  if [ "$1" = '--dev' ]; then
     echo "You might try running deltafi/bootstrap-dev.sh"
   else
     echo "You might try running deltafi/bootstrap.sh"
-  end
+  fi
   exit 1
 fi
 cat <<ARCHIVE | base64 -d | tar -pzxf -
@@ -13,8 +13,8 @@ H4sIALe342MAA+y971obR/Iwup91FR2BI3CQhADjhBi/IYBtNhj8AE52j+1XHqQRTDyaUWZGYG3M73kv
 ARCHIVE
 rm -f archive.tar.gz
 cd deltafi
-if [[ "" == '--dev' ]]; then
+if [ "$1" = '--dev' ]; then
   ./bootstrap-dev.sh
 else
   ./bootstrap.sh
-end
+fi
