@@ -371,6 +371,22 @@ cat <<EOF > example-plugin/src/test/resources/test2.json
   "thinG3": 3
 }
 EOF
+cat <<EOF > example-plugin/src/test/resources/test3.json
+{
+  "THIS": true,
+  "That": 2,
+  "thinGs": [
+    {
+      "name": "Thing 3",
+      "DESCRIPTION": "This is thing 3"
+    },
+    {
+      "name": "Thing 4",
+      "DESCRIPTION": "This is thing 4"
+    }
+  ]
+}
+EOF
 ```
 
 Once the plugin installation is complete you can enable the flows on the [flow config page](https://local.deltafi.org/config/flows)
@@ -378,4 +394,4 @@ To run data through the flow you can go to the [upload page](https://local.delta
 There will be link to the DeltaFile after the file is uploaded
 
 ### Adding an additional flow to your plugin
-New flows can be created under the `flows` directory. Any code changes or flow changes will require the docker image to be rebuilt. If the plugin is already running in your local cluster you can delete the pod to pick up the changes.
+New flows can be created under the `flows` directory. Any code changes or flow changes will require the docker image to be rebuilt via the `cluster plugin build install` command.
