@@ -308,6 +308,27 @@ public class YamlFormatAction extends FormatAction<ActionParameters> {
 EOF
 ```
 
+Add the needed dependency to build.gradle:
+
+```bash
+cat <<EOF > example-plugin/build.gradle
+plugins {
+    id 'org.deltafi.version-reckoning' version "1.0"
+    id 'org.deltafi.plugin-convention' version "${deltafiVersion}"
+    id 'org.deltafi.test-summary' version "1.0"
+}
+
+group 'org.deltafi.example'
+
+ext.pluginDescription = 'A plugin that takes in json, normalizes the keys and outputs yaml'
+
+dependencies {
+    // Dependency needed by YamlFormatAction
+    implementation 'com.fasterxml.jackson.dataformat:jackson-dataformat-yaml:2.14.2'
+}
+EOF
+```
+
 ### Building and Installing your plugin
 
 DeltaFi has a development CLI command called `cluster` which we will use for this example.
