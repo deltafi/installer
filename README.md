@@ -360,8 +360,15 @@ mkdir -p example-plugin/src/test/resources
 cat <<EOF > example-plugin/src/test/resources/test1.json
 {
   "THING1": "This is thing 1",
+  "Thing2": "This is thing 2",
+  "thinG3": "This is thing 3"
+}
+EOF
+cat <<EOF > example-plugin/src/test/resources/test1.json
+{
+  "THING1": 1,
   "Thing2": 2,
-  "things": [ "Thing1", "Thing2", { "name": "Thing3", "DETAILS": "This is thing 3" } ]
+  "thinG3": 3
 }
 EOF
 ```
