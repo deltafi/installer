@@ -37,10 +37,46 @@ The UI can be accessed at `https://local.deltafi.org`.
 
 ### Installing the development environment
 
+To execute a singlestep install of the latest released version of DeltaFi in a self contained KinD (Kubernetes in Docker) cluster:
+
+```bash
+curl -fsSL https://gitlab.com/deltafi/installer/-/raw/main/kind-install.sh > kind-install.sh
+chmod +x kind-install.sh
+./kind-install.sh --dev
+```
+
+If you have previously done a demo install, you can simply execute the development bootstrap as follows:
+
+```bash
+deltafi/bootstrap-dev.sh
+```
+
+The UI can be accessed at `http://local.deltafi.org` and the Grafana metrics dashboard can be accessed at `https://metrics.local.deltafi.org/dashboards`.  You should visit those links in your browser to verify that the installation process is complete.  Note: You will need to accept security warnings in your browser for missing certificates.
+
+> We should fix this so we can just use http:// links for everything.
+
+You can execute the following commands to see status from the command line:
+
+```bash
+# See status of the DeltaFi subsystems running in the local Kubernetes cluster
+kubectl get pods
+```
+
+```bash
+# See the DeltaFi system check status
+deltafi status
+```
+
+```bash
+# See the current versions of subsystems and plugins running in your DeltaFi instance
+deltafi versions
+```
+
 ### Creating a skeleton plugin
 A new plugin can be initialized using the `deltafi plugin-init` command. This will prompt for the information necessary to create the plugin. Alternatively, you can initialize a new plugin by passing a configuration file to the command: `deltafi plugin-init -f plugin-config.json`.
 
-Below are the steps to generate the [example-project](https://gitlab.com/deltafi/example-plugin). This must be run in the parent directory of the `deltafi` directory that was created by the installer.
+Below are the steps to generate the [example-project](https://gitlab.com/deltafi/example-plugin). This must be run in the parent directory of the `deltafi` directory that was created by the installer (your location after running the singlestep install process).
+
 ```bash
 cat <<EOF > plugin-config.json
 {
@@ -65,38 +101,108 @@ EOF
 deltafi plugin-init -f plugin-config.json
 ```
 
+If the plugin directory was created with root permissions, you may need to take the following step to make the plugin source editable
+
+```bash
+sudo chmod -R a+rwX example-plugin
+```
+
+> This is ugly.  We need to find a workaround to make the perms right from the get-go.  The most likely way is to wrap the deltafi plugin-init command in the cluster command and just for the KinD CLI, we generate the zip file, then unzip it with the outer caller, so permissions are correct, then remove the zip from within the cluster shell.
+
 ### Building a simple flow in your plugin
 Flows are versioned and packaged as part of your plugin source code. In a Java project they are located in `src/main/resources/flows`, in a Python project they are located in `src/flows/`.
 Flows can reference both actions local to your plugin and any other actions that are running on your DeltaFi instance.
 The next sections walk through building the flows for the example project.
 
 #### Update the Ingress Flow
-In this ingress flow we do not require any transform actions, we will process the incoming data as is in the load action.
+For this example, we do not require any transform actions, we will process the incoming data as-is in the load action.
 
-1. Open the `sample-ingress.json` in an editor
-1. Delete the transformActions array, in this simple flow we do not need to preprocess data prior to the load action
-1. Update the loadAction type to `org.deltafi.example.actions.JsonLoadAction` which is the full classname of the LoadAction generated earlier (the type is used to route the DeltaFile to the correct Action class that will act upon the DeltaFile).
-1. Remove the parameters object, this load action does not require any parameters
+We will remove the sample flows and create a new set of flows for our example plugin:
 
-#### Update the Enrich Flow
-This flow does not require any domain validation or enrichment, the `sample-enrich.json` file can be removed
+```bash
+rm -f example-plugin/src/main/resources/flows/sample*.json
 
-#### Update the Egress Flow
-The egress flow will contain the FormatAction which formats the Json domain object as Yaml.
+# Create an ingress flow
+cat <<EOF > example-plugin/src/main/resources/flows/example-ingress.json
+{
+  "name": "example-ingress",
+  "type": "INGRESS",
+  "description": "Ingress flows require a load action and can optional contain one or more transform actions",
+  "loadAction": {
+    "name": "ExampleLoadAction",
+    "type": "org.deltafi.example.actions.JsonLoadAction"
+  }
+}
+EOF
 
-1. Open the `sample-egress.json` in an editor
-1. Delete the valiateActions array, in this flow we do not need to validate the output of the format action
-1. Update the formatAction type to `org.deltafi.example.actions.YamlFormatAction` which is the full classname of the FormatAction generated earlier
+# Create an egress flow
+cat <<EOF > example-plugin/src/main/resources/flows/example-ingress.json
+{
+  "name": "example-egress",
+  "type": "EGRESS",
+  "description": "Egress flows require a format action and an egress action and optionally can provide one or more validate actions",
+  "includeIngressFlows": [
+    "example-ingress"
+  ],
+  "formatAction": {
+    "name": "ExampleFormatAction",
+    "type": "org.deltafi.example.actions.YamlFormatAction",
+    "requiresDomains": [
+      "example-json"
+    ]
+  },
+  "egressAction": {
+    "name": "ExampleEgressAction",
+    "type": "org.deltafi.core.action.RestPostEgressAction",
+    "parameters": {
+      "metadataKey": "deltafiMetadata",
+      "url": "${egressUrl}"
+    }
+  }
+}
+EOF
 
-#### Plugin Variables
-For actions that require parameters there is an option to use variable substitution in the flow plan.  The `variables.json` holds all the variables that can be set in the plugin as well as any default values for those variables. To reference a variable in a flow surround the value with ${}. In the egress flow there is an example of this, the ${egressUrl} is a variable which can then be updated at runtime.
+# Set configuration variables
+cat <<EOF > example-plugin/src/main/resources/flows/example-ingress.json
+[
+  {
+    "name": "egressUrl",
+    "description": "The URL to post the DeltaFile to",
+    "dataType": "STRING",
+    "required": true,
+    "defaultValue": "http://deltafi-egress-sink-service"
+  }
+]
+EOF
+```
+
+### Adding some logic to load and format actions
+
+#### ---TBD---
+
+### Building and Installing your plugin
+
+DeltaFi has a development CLI command called `cluster` which we will use for this example.
+
+```bash
+# Install the DeltaFi passthrough plugin
+deltafi plugin-install org.deltafi.passthrough:deltafi-passthrough:$(deltafi version)
+
+# Register the example plugin with cluster tool
+cluster plugin add-local example-plugin org.deltafi.example
+
+# Build and install the example-plugin
+cluster plugin build install
+```
+
+If you make changes to your plugin, you may re-run `cluster plugin build install` to update the plugin with your changes.
+
+If you want to compile and execute tests for your plugin, you can do so from the `example-plugin` directory:
+```bash
+./gradlew build test
+```
 
 ### Testing your plugin
-After the action logic is implemented and the flows are updated, the plugin can be built and installed with the following steps.
-```bash
-./gradlew clean build dockerPushLocal`
-deltafi install-plugin org.deltafi.example:example-plugin:latest -i localhost:5000/
-```
 
 Once the plugin installation is complete you can enable the flows on the [flow config page](https://local.deltafi.org/config/flows)
 To run data through the flow you can go to the [upload page](https://local.deltafi.org/deltafile/upload/), choose your ingress flow and upload a file.
