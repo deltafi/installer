@@ -136,7 +136,7 @@ cat <<EOF > example-plugin/src/main/resources/flows/example-ingress.json
 EOF
 
 # Create an egress flow
-cat <<EOF > example-plugin/src/main/resources/flows/example-ingress.json
+cat <<EOF > example-plugin/src/main/resources/flows/example-egress.json
 {
   "name": "example-egress",
   "type": "EGRESS",
