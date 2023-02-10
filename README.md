@@ -314,7 +314,7 @@ Add the needed dependency to build.gradle:
 cat <<EOF > example-plugin/build.gradle
 plugins {
     id 'org.deltafi.version-reckoning' version "1.0"
-    id 'org.deltafi.plugin-convention' version "${deltafiVersion}"
+    id 'org.deltafi.plugin-convention' version "\${deltafiVersion}"
     id 'org.deltafi.test-summary' version "1.0"
 }
 
