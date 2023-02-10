@@ -163,7 +163,7 @@ cat <<EOF > example-plugin/src/main/resources/flows/example-egress.json
 EOF
 
 # Set configuration variables
-cat <<EOF > example-plugin/src/main/resources/flows/example-ingress.json
+cat <<EOF > example-plugin/src/main/resources/flows/variables.json
 [
   {
     "name": "egressUrl",
