@@ -364,7 +364,7 @@ cat <<EOF > example-plugin/src/test/resources/test1.json
   "thinG3": "This is thing 3"
 }
 EOF
-cat <<EOF > example-plugin/src/test/resources/test1.json
+cat <<EOF > example-plugin/src/test/resources/test2.json
 {
   "THING1": 1,
   "Thing2": 2,
