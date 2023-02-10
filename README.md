@@ -178,7 +178,135 @@ EOF
 
 ### Adding some logic to load and format actions
 
-#### ---TBD---
+Add a Constants class:
+
+```bash
+cat <<EOF > example-plugin/src/main/java/org/deltafi/example/actions/Constants.java
+package org.deltafi.example.actions;
+
+public class Constants {
+
+    public static final String DOMAIN = "example-json";
+
+}
+EOF
+```
+
+Implement the JsonLoadAction class:
+
+```bash
+cat <<EOF > example-plugin/src/main/java/org/deltafi/example/actions/JsonLoadAction.java
+package org.deltafi.example.actions;
+
+import com.fasterxml.jackson.databind.ObjectMapper;
+import org.deltafi.actionkit.action.load.LoadAction;
+import org.deltafi.actionkit.action.load.LoadInput;
+import org.deltafi.actionkit.action.load.LoadResult;
+import org.deltafi.actionkit.action.load.LoadResultType;
+import org.deltafi.actionkit.action.parameters.ActionParameters;
+import org.deltafi.common.storage.s3.ObjectStorageException;
+import org.deltafi.common.types.ActionContext;
+import org.jetbrains.annotations.NotNull;
+import org.springframework.stereotype.Component;
+
+import java.io.IOException;
+import java.io.InputStream;
+import java.util.HashMap;
+import java.util.List;
+import java.util.Map;
+
+@Component
+public class JsonLoadAction extends LoadAction<ActionParameters> {
+
+    private static final ObjectMapper OBJECT_MAPPER = new ObjectMapper();
+
+
+    public JsonLoadAction() {
+        super("Maps incoming json keys to all lowercase and loads the result in a domain under example-json");
+    }
+
+    @Override
+    public LoadResultType load(@NotNull ActionContext context, @NotNull ActionParameters params, @NotNull LoadInput loadInput) {
+        try (InputStream is = loadContentAsInputStream(loadInput.firstContent().getContentReference())) {
+            Map<String, String> incomingData = OBJECT_MAPPER.readValue(is, Map.class);
+
+            Map<String, String> lowerCaseKeys = new HashMap<>();
+
+            for (Map.Entry<String, String> entry: incomingData.entrySet()) {
+                lowerCaseKeys.put(entry.getKey().toLowerCase(), entry.getValue());
+            }
+
+            LoadResult loadResult = new LoadResult(context, List.of());
+            loadResult.addDomain(Constants.DOMAIN, OBJECT_MAPPER.writeValueAsString(lowerCaseKeys), "application/json");
+            return loadResult;
+        } catch (ObjectStorageException e) {
+            throw new RuntimeException(e);
+        } catch (IOException e) {
+            throw new RuntimeException(e);
+        }
+    }
+}
+EOF
+```
+
+Implement the YamlFormatAction class:
+
+```bash
+cat <<EOF > example-plugin/src/main/java/org/deltafi/example/actions/YamlFormatAction.java
+package org.deltafi.example.actions;
+
+import com.fasterxml.jackson.core.JsonProcessingException;
+import com.fasterxml.jackson.databind.ObjectMapper;
+import com.fasterxml.jackson.dataformat.yaml.YAMLFactory;
+import org.deltafi.actionkit.action.error.ErrorResult;
+import org.deltafi.actionkit.action.format.FormatAction;
+import org.deltafi.actionkit.action.format.FormatInput;
+import org.deltafi.actionkit.action.format.FormatResult;
+import org.deltafi.actionkit.action.format.FormatResultType;
+import org.deltafi.actionkit.action.parameters.ActionParameters;
+import org.deltafi.common.storage.s3.ObjectStorageException;
+import org.deltafi.common.types.ActionContext;
+import org.jetbrains.annotations.NotNull;
+import org.springframework.stereotype.Component;
+
+import java.util.List;
+import java.util.Map;
+
+@Component
+public class YamlFormatAction extends FormatAction<ActionParameters> {
+
+    private static final ObjectMapper JSON_MAPPER = new ObjectMapper();
+    private static final ObjectMapper YAML_MAPPER = new ObjectMapper(new YAMLFactory());
+
+    public YamlFormatAction() {
+        super("Acts on any DeltaFile with a domain of sample-json, converts the json to yaml");
+    }
+
+    @Override
+    public FormatResultType format(@NotNull ActionContext context, @NotNull ActionParameters params, @NotNull FormatInput formatInput) {
+        String data = formatInput.getDomains().get(Constants.DOMAIN).getValue();
+        FormatResult formatResult = new FormatResult(context, getName(formatInput));
+
+        try {
+            Map<String, String> domainData = JSON_MAPPER.readValue(data, Map.class);
+            formatResult.setContentReference(saveContent(context.getDid(), YAML_MAPPER.writeValueAsString(domainData).getBytes(), "application/yaml"));
+        } catch (ObjectStorageException | JsonProcessingException e) {
+            return new ErrorResult(context, "Failed to convert or store data", e);
+        }
+        return formatResult;
+    }
+
+    String getName(FormatInput formatInput) {
+        return formatInput.getSourceFilename() + ".yaml";
+    }
+
+    @Override
+    public List<String> getRequiresDomains() {
+        return List.of(Constants.DOMAIN);
+    }
+}
+EOF
+```
 
 ### Building and Installing your plugin
 
@@ -203,6 +331,19 @@ If you want to compile and execute tests for your plugin, you can do so from the
 ```
 
 ### Testing your plugin
+
+Generate some test data for your plugin:
+
+```bash
+mkdir -p example-plugin/src/test/resources
+cat <<EOF > example-plugin/src/test/resources/test1.json
+{
+  "THING1": "This is thing 1",
+  "Thing2": 2,
+  "things": [ "Thing1", "Thing2", { "name": "Thing3", "DETAILS": "This is thing 3" } ]
+}
+EOF
+```
 
 Once the plugin installation is complete you can enable the flows on the [flow config page](https://local.deltafi.org/config/flows)
 To run data through the flow you can go to the [upload page](https://local.deltafi.org/deltafile/upload/), choose your ingress flow and upload a file.
