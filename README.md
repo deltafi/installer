@@ -156,7 +156,7 @@ cat <<EOF > example-plugin/src/main/resources/flows/example-egress.json
     "type": "org.deltafi.core.action.RestPostEgressAction",
     "parameters": {
       "metadataKey": "deltafiMetadata",
-      "url": "${egressUrl}"
+      "url": "\${egressUrl}"
     }
   }
 }
