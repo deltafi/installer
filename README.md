@@ -389,9 +389,78 @@ cat <<EOF > example-plugin/src/test/resources/test3.json
 EOF
 ```
 
-Once the plugin installation is complete you can enable the flows on the [flow config page](https://local.deltafi.org/config/flows)
-To run data through the flow you can go to the [upload page](https://local.deltafi.org/deltafile/upload/), choose your ingress flow and upload a file.
-There will be link to the DeltaFile after the file is uploaded
+Once the plugin installation is complete you can enable the flows on the [flow config page](http://local.deltafi.org/config/flows)
+To run data through the flow you can go to the [upload page](http://local.deltafi.org/deltafile/upload/), choose your ingress flow and upload a file.
+There will be link to the DeltaFile after the file is uploaded.
+
+You can see the results of all uploaded DeltaFiles in the [search page](Http://local.deltafi.org/deltafile/search?ingressFlow=example-ingress).
+
+When test1.json is uploaded, the file should complete and be egressed.  However test2.json and test3.json result in errors based on our initial implementation.
+
+The following changes to the load action should fix the problem:
+
+```bash
+cat <<EOF > example-plugin/src/main/java/org/deltafi/example/actions/JsonLoadAction.java
+package org.deltafi.example.actions;
+
+import com.fasterxml.jackson.databind.ObjectMapper;
+import org.deltafi.actionkit.action.load.LoadAction;
+import org.deltafi.actionkit.action.load.LoadInput;
+import org.deltafi.actionkit.action.load.LoadResult;
+import org.deltafi.actionkit.action.load.LoadResultType;
+import org.deltafi.actionkit.action.parameters.ActionParameters;
+import org.deltafi.common.storage.s3.ObjectStorageException;
+import org.deltafi.common.types.ActionContext;
+import org.jetbrains.annotations.NotNull;
+import org.springframework.stereotype.Component;
+
+import java.io.IOException;
+import java.io.InputStream;
+import java.util.HashMap;
+import java.util.List;
+import java.util.Map;
+
+@Component
+public class JsonLoadAction extends LoadAction<ActionParameters> {
+
+    private static final ObjectMapper OBJECT_MAPPER = new ObjectMapper();
+
+
+    public JsonLoadAction() {
+        super("Maps incoming json keys to all lowercase and loads the result in a domain under example-json");
+    }
+
+    @Override
+    public LoadResultType load(@NotNull ActionContext context, @NotNull ActionParameters params, @NotNull LoadInput loadInput) {
+        try (InputStream is = loadContentAsInputStream(loadInput.firstContent().getContentReference())) {
+            Map<String, Object> incomingData = OBJECT_MAPPER.readValue(is, Map.class);
+
+            Map<String, Object> lowerCaseKeys = new HashMap<>();
+
+            for (Map.Entry<String, Object> entry: incomingData.entrySet()) {
+                lowerCaseKeys.put(entry.getKey().toLowerCase(), entry.getValue());
+            }
+
+            LoadResult loadResult = new LoadResult(context, List.of());
+            loadResult.addDomain(Constants.DOMAIN, OBJECT_MAPPER.writeValueAsString(lowerCaseKeys), "application/json");
+            return loadResult;
+        } catch (ObjectStorageException e) {
+            throw new RuntimeException(e);
+        } catch (IOException e) {
+            throw new RuntimeException(e);
+        }
+    }
+}
+EOF
+```
+
+After making this code change, rebuild and reinstall the plugin:
+
+```bash
+cluster plugin build install
+```
+
+Now you can go to the [errors page](http://local.deltafi.org/errors) in the DeltaFi UI and resume the errored flows.  They should continue without error and egress well formed YAML versions of the normalized input.
 
 ### Adding an additional flow to your plugin
 New flows can be created under the `flows` directory. Any code changes or flow changes will require the docker image to be rebuilt via the `cluster plugin build install` command.
