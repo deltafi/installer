@@ -27,7 +27,7 @@ chmod +x kind-install.sh
 ./kind-install.sh
 ```
 
-The UI can be accessed at `https://local.deltafi.org`.
+The UI can be accessed at `http://local.deltafi.org`.
 
 ### Exploring DeltaFi
 
@@ -51,9 +51,7 @@ If you have previously done a demo install, you can simply execute the developme
 deltafi/bootstrap-dev.sh
 ```
 
-The UI can be accessed at `http://local.deltafi.org` and the Grafana metrics dashboard can be accessed at `https://metrics.local.deltafi.org/dashboards`.  You should visit those links in your browser to verify that the installation process is complete.  Note: You will need to accept security warnings in your browser for missing certificates.
-
-> We should fix this so we can just use http:// links for everything.
+The UI can be accessed at `http://local.deltafi.org` and the Grafana metrics dashboard can be accessed at `http://metrics.local.deltafi.org/dashboards`.  You should visit those links in your browser to verify that the installation process is complete.
 
 You can execute the following commands to see status from the command line:
 
