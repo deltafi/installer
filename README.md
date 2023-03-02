@@ -75,8 +75,8 @@ A new plugin can be initialized using the `deltafi plugin-init` command. This wi
 
 Below are the steps to generate the [example-project](https://gitlab.com/deltafi/example-plugin). This must be run in the parent directory of the `deltafi` directory that was created by the installer (your location after running the singlestep install process).
 
-```bash
-cat <<EOF > plugin-config.json
+Create `plugin-config.json`:
+```json
 {
   "artifactId": "example-plugin",
   "groupId": "org.deltafi.example",
@@ -95,17 +95,12 @@ cat <<EOF > plugin-config.json
     }
   ]
 }
-EOF
+```
+
+Generate the skeleton plugin with the following command:
+```bash
 deltafi plugin-init -f plugin-config.json
 ```
-
-If the plugin directory was created with root permissions, you may need to take the following step to make the plugin source editable
-
-```bash
-sudo chmod -R a+rwX example-plugin
-```
-
-> This is ugly.  We need to find a workaround to make the perms right from the get-go.  The most likely way is to wrap the deltafi plugin-init command in the cluster command and just for the KinD CLI, we generate the zip file, then unzip it with the outer caller, so permissions are correct, then remove the zip from within the cluster shell.
 
 ### Building a simple flow in your plugin
 Flows are versioned and packaged as part of your plugin source code. In a Java project they are located in `src/main/resources/flows`, in a Python project they are located in `src/flows/`.
@@ -118,10 +113,13 @@ For this example, we do not require any transform actions, we will process the i
 We will remove the sample flows and create a new set of flows for our example plugin:
 
 ```bash
+# Clean out the sample flow
 rm -f example-plugin/src/main/resources/flows/sample*.json
+```
 
-# Create an ingress flow
-cat <<EOF > example-plugin/src/main/resources/flows/example-ingress.json
+Create `example-plugin/src/main/resources/flows/example-ingress.json`
+
+```json
 {
   "name": "example-ingress",
   "type": "INGRESS",
@@ -131,10 +129,11 @@ cat <<EOF > example-plugin/src/main/resources/flows/example-ingress.json
     "type": "org.deltafi.example.actions.JsonLoadAction"
   }
 }
-EOF
+```
 
-# Create an egress flow
-cat <<EOF > example-plugin/src/main/resources/flows/example-egress.json
+Create `example-plugin/src/main/resources/flows/example-egress.json`
+
+```json
 {
   "name": "example-egress",
   "type": "EGRESS",
@@ -158,10 +157,10 @@ cat <<EOF > example-plugin/src/main/resources/flows/example-egress.json
     }
   }
 }
-EOF
+```
 
-# Set configuration variables
-cat <<EOF > example-plugin/src/main/resources/flows/variables.json
+Create `example-plugin/src/main/resources/flows/variables.json`
+```json
 [
   {
     "name": "egressUrl",
@@ -171,15 +170,13 @@ cat <<EOF > example-plugin/src/main/resources/flows/variables.json
     "defaultValue": "http://deltafi-egress-sink-service"
   }
 ]
-EOF
 ```
 
 ### Adding some logic to load and format actions
 
-Add a Constants class:
+Add a Constants class (`example-plugin/src/main/java/org/deltafi/example/actions/Constants.java`):
 
-```bash
-cat <<EOF > example-plugin/src/main/java/org/deltafi/example/actions/Constants.java
+```java
 package org.deltafi.example.actions;
 
 public class Constants {
@@ -187,13 +184,11 @@ public class Constants {
     public static final String DOMAIN = "example-json";
 
 }
-EOF
 ```
 
-Implement the JsonLoadAction class:
+Implement the JsonLoadAction class (`example-plugin/src/main/java/org/deltafi/example/actions/JsonLoadAction.java`):
 
-```bash
-cat <<EOF > example-plugin/src/main/java/org/deltafi/example/actions/JsonLoadAction.java
+```java
 package org.deltafi.example.actions;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
@@ -244,13 +239,11 @@ public class JsonLoadAction extends LoadAction<ActionParameters> {
         }
     }
 }
-EOF
 ```
 
-Implement the YamlFormatAction class:
+Implement the YamlFormatAction class (`example-plugin/src/main/java/org/deltafi/example/actions/YamlFormatAction.java`):
 
-```bash
-cat <<EOF > example-plugin/src/main/java/org/deltafi/example/actions/YamlFormatAction.java
+```java
 package org.deltafi.example.actions;
 
 import com.fasterxml.jackson.core.JsonProcessingException;
@@ -303,13 +296,11 @@ public class YamlFormatAction extends FormatAction<ActionParameters> {
         return List.of(Constants.DOMAIN);
     }
 }
-EOF
 ```
 
-Add the needed dependency to build.gradle:
+Add the needed dependency to `example-plugin/build.gradle:
 
-```bash
-cat <<EOF > example-plugin/build.gradle
+```gradle
 plugins {
     id 'org.deltafi.version-reckoning' version "1.0"
     id 'org.deltafi.plugin-convention' version "\${deltafiVersion}"
@@ -324,7 +315,6 @@ dependencies {
     // Dependency needed by YamlFormatAction
     implementation 'com.fasterxml.jackson.dataformat:jackson-dataformat-yaml:2.14.2'
 }
-EOF
 ```
 
 ### Building and Installing your plugin
@@ -353,23 +343,26 @@ If you want to compile and execute tests for your plugin, you can do so from the
 
 Generate some test data for your plugin:
 
-```bash
-mkdir -p example-plugin/src/test/resources
-cat <<EOF > example-plugin/src/test/resources/test1.json
+`example-plugin/src/test/resources`:
+```json
 {
   "THING1": "This is thing 1",
   "Thing2": "This is thing 2",
   "thinG3": "This is thing 3"
 }
-EOF
-cat <<EOF > example-plugin/src/test/resources/test2.json
+```
+
+`example-plugin/src/test/resources/test2.json`
+```json
 {
   "THING1": 1,
   "Thing2": 2,
   "thinG3": 3
 }
-EOF
-cat <<EOF > example-plugin/src/test/resources/test3.json
+```
+
+`example-plugin/src/test/resources/test3.json`:
+```json
 {
   "THIS": true,
   "That": 2,
@@ -384,7 +377,6 @@ cat <<EOF > example-plugin/src/test/resources/test3.json
     }
   ]
 }
-EOF
 ```
 
 Once the plugin installation is complete you can enable the flows on the [flow config page](http://local.deltafi.org/config/flows)
@@ -397,8 +389,8 @@ When test1.json is uploaded, the file should complete and be egressed.  However 
 
 The following changes to the load action should fix the problem:
 
-```bash
-cat <<EOF > example-plugin/src/main/java/org/deltafi/example/actions/JsonLoadAction.java
+`example-plugin/src/main/java/org/deltafi/example/actions/JsonLoadAction.java`:
+```java
 package org.deltafi.example.actions;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
@@ -449,7 +441,6 @@ public class JsonLoadAction extends LoadAction<ActionParameters> {
         }
     }
 }
-EOF
 ```
 
 After making this code change, rebuild and reinstall the plugin:
