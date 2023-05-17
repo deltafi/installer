@@ -1,0 +1,50 @@
+stages:
+  - build
+  - publish
+
+default:
+  timeout: 45m
+
+image: deltafi/deltafi-build:jdk17-2
+
+build:
+  stage: build
+  rules:
+    - if: $VERSION
+  before_script:
+    - eval $(ssh-agent -s)
+    - echo "${SSH_PRIVATE_KEY}" | base64 -d | ssh-add - > /dev/null
+
+    - mkdir -p ~/.ssh
+    - chmod 700 ~/.ssh
+
+    - ssh-keyscan gitlab.com >> ~/.ssh/known_hosts
+    - chmod 644 ~/.ssh/known_hosts
+
+    - git config --global user.email "gitlab@gitlab.com"
+    - git config --global user.name "Gitlab CI/CD"
+    - rm -rf ${CI_BUILDS_DIR}/deltafi-pristine
+    - git clone https://gitlab-ci-token:${CI_JOB_TOKEN}@gitlab.com/systolic/deltafi/deltafi -b "${VERSION}" ${CI_BUILDS_DIR}/deltafi-pristine
+  script:
+    - rm -rf *
+    - git checkout README.md
+    - echo $VERSION > VERSION
+    - cp -rf ${CI_BUILDS_DIR}/deltafi-pristine/charts .
+    - cp -rf ${CI_BUILDS_DIR}/deltafi-pristine/deltafi-cli .
+    - cp -rf ${CI_BUILDS_DIR}/deltafi-pristine/kind .
+    - cp -rf ${CI_BUILDS_DIR}/deltafi-pristine/bootstrap*.sh .
+    - cp -rf ${CI_BUILDS_DIR}/deltafi-pristine/LICENSE .
+    - cp -rf ${CI_BUILDS_DIR}/deltafi-pristine/CHANGELOG.md .
+    - cp -rf ${CI_BUILDS_DIR}/deltafi-pristine/utils .
+    - cd utils
+    - ./build-self-extracting-installer.sh
+    - cd ..
+    - git add .
+    - git config user.email "deltafi@deltafi.org"
+    - git config user.name "DeltaFi"
+    - git commit -m $VERSION
+    - git tag -a -m "$VERSION" "$VERSION" -f
+    - tree
+    - git remote add pub "git@gitlab.com:deltafi/installer.git"
+    - git push -o ci.skip pub HEAD:${CI_COMMIT_REF_NAME}
+    - git push --tags -o ci.skip pub "$VERSION" -f
