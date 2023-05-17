@@ -1,0 +1,1178 @@
+#!/usr/bin/env bash
+#
+#    DeltaFi - Data transformation and enrichment platform
+#
+#    Copyright 2021-2023 DeltaFi Contributors <deltafi@deltafi.org>
+#
+#    Licensed under the Apache License, Version 2.0 (the "License");
+#    you may not use this file except in compliance with the License.
+#    You may obtain a copy of the License at
+#
+#        http://www.apache.org/licenses/LICENSE-2.0
+#
+#    Unless required by applicable law or agreed to in writing, software
+#    distributed under the License is distributed on an "AS IS" BASIS,
+#    WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+#    See the License for the specific language governing permissions and
+#    limitations under the License.
+#
+
+# vim: filetype=bash
+set -e
+
+# _readlink()
+#
+# Usage:
+#   _readlink [-e|-f|<options>] <path/to/symlink>
+#
+# Options:
+#   -f  All but the last component must exist.
+#   -e  All components must exist.
+#
+# Description:
+#   Wrapper for `readlink` that provides portable versions of GNU `readlink -f`
+#   and `readlink -e`, which canonicalize by following every symlink in every
+#   component of the given name recursively.
+#
+# More Information:
+#   http://stackoverflow.com/a/1116890
+_readlink() {
+  local _target_path
+  local _target_file
+  local _final_directory
+  local _final_path
+  local _option
+
+  for __arg in "${@:-}"
+  do
+    case "${__arg}" in
+      -e|-f)
+        _option="${__arg}"
+        ;;
+      -*)
+        # do nothing
+        # ':' is bash no-op
+        :
+        ;;
+      *)
+        if [[ -z "${_target_path:-}" ]]
+        then
+          _target_path="${__arg}"
+        fi
+        ;;
+    esac
+  done
+
+  if [[ -z "${_option}" ]]
+  then
+    readlink "${@}"
+  else
+    if [[ -z "${_target_path:-}" ]]
+    then
+      printf "_readlink: missing operand\\n"
+      return 1
+    fi
+
+    cd "$(dirname "${_target_path}")" || return 1
+    _target_file="$(basename "${_target_path}")"
+
+    # Iterate down a (possible) chain of symlinks
+    while [[ -L "${_target_file}" ]]
+    do
+      _target_file="$(readlink "${_target_file}")"
+      cd "$(dirname "${_target_file}")" || return 1
+      _target_file="$(basename "${_target_file}")"
+    done
+
+    # Compute the canonicalized name by finding the physical path
+    # for the directory we're in and appending the target file.
+    _final_directory="$(pwd -P)"
+    _final_path="${_final_directory}/${_target_file}"
+
+    if [[ "${_option}" == "-f" ]]
+    then
+      printf "%s\\n" "${_final_path}"
+      return 0
+    elif [[ "${_option}" == "-e" ]]
+    then
+      if [[ -e "${_final_path}" ]]
+      then
+        printf "%s\\n" "${_final_path}"
+        return 0
+      else
+        return 1
+      fi
+    else
+      return 1
+    fi
+  fi
+}
+
+_tool_exists() {
+    command -v "$1" &> /dev/null
+}
+
+# Detect linux OS
+_is_linux() {
+  if [[ $(uname) == 'Linux' ]]; then
+    return 0
+  else
+    return 1
+  fi
+}
+
+# Detect arm processor
+_is_arm() {
+  if [[ $(uname -p) == 'arm' || $(uname -m) == 'aarch64' ]]; then
+    return 0
+  else
+    return 1
+  fi
+}
+
+BASE_PATH="$( cd "$( dirname "$(_readlink -f "${BASH_SOURCE[0]}")")" &> /dev/null && pwd )"
+export BASE_PATH
+DELTAFI_PATH="$( cd "$BASE_PATH/.." &> /dev/null && pwd)"
+ROOT="$( cd "$BASE_PATH/../.." &> /dev/null && pwd)"
+CLUSTER_NAME=deltafi
+PV_DIR=$BASE_PATH/data
+SUDO=$(which sudo)
+
+if [[ "$(basename "$0")" == "deltafi" ]]; then
+  # Deltafi wrapper mode
+
+  if [[ $# -gt 0 ]]; then
+
+    case $1 in
+      install|update|upgrade|start|shell|loc|plugin|config)
+        cluster "$@"
+        ;;
+      cluster)
+        shift
+        cluster "$@"
+        ;;
+      # Commands that do not need recursive call into cluster
+      version|uninstall|did|list-actions|list-flows|list-plugins|list-plans|list-policies|mongol-cli|mongo-migrate|mongo-eval|redis-watch|redis-cli|redis-stats|redis-latency|serviceip)
+        "$DELTAFI_PATH/deltafi-cli/deltafi" "$@"
+        ;;
+      ingress)
+        INGRESS_DIR=$PV_DIR/ingress
+        shift
+        flow=$1
+        filename=$2
+        shift 2
+        mkdir -p "${INGRESS_DIR}"
+        cp "$filename" "${INGRESS_DIR}"
+        docker exec -it -u="$(id -u):$(id -g)" -w /usr/dev ${CLUSTER_NAME}-control-plane deltafi ingress "$flow" "/data/deltafi/ingress/$(basename "$filename")"
+        rm "${INGRESS_DIR}/$(basename "$filename")"
+        ;;
+      *)
+        docker exec -it -u="$(id -u):$(id -g)" -w /usr/dev ${CLUSTER_NAME}-control-plane deltafi "$@"
+        ;;
+    esac
+    exit 0
+  fi
+  "$DELTAFI_PATH/deltafi-cli/deltafi"
+  exit 0
+fi
+
+source "${BASE_PATH}/files/bask"
+
+_require() {
+  command -v "$1" &> /dev/null || _exit_1 echo "'$1' must be installed"
+}
+
+_require docker
+_require kubectl
+_require kubens
+_require kind
+_require yq
+_require deltafi
+
+___start=$(date +%s)
+
+# Duration trap
+_emit_duration() {
+
+  local duration
+  duration=$(echo "$(date +%s) - $___start" | bc)
+  local execution_time
+  execution_time=$(printf "%d seconds" "$duration")
+  echo
+  _info "Execution time: ${blue}$execution_time${normal}"
+  echo
+}
+
+trap _emit_duration EXIT
+
+
+# Load configuration from cluster.yaml
+CONFIG=${BASE_PATH}/cluster.yaml
+[[ -f "${CONFIG}" ]] || cp "${CONFIG}.template" "${CONFIG}"
+PV_STORAGE=$(yq '.persistent_volume.storage' "${CONFIG}")
+readarray -t FQDNS < <(yq '.fqdns[]' "${CONFIG}")
+readarray -t PLUGINS < <(yq '.plugins[].name' "${CONFIG}")
+
+_url_for_plugin() {
+  local plugin=$1
+  yq ".plugins[] | select(.name == \"$plugin\") | .url" "${CONFIG}"
+}
+
+_plugin_field() {
+  local plugin=$1
+  local field=$2
+  yq ".plugins[] | select(.name == \"$plugin\") | .$field" "${CONFIG}"
+}
+
+_are_you_sure() {
+  local prompt=${1:-"Are you sure?"}
+  read -r -p "         ${yellow}$prompt${normal} [y/N] " response
+  case "$response" in
+    [yY][eE][sS]|[yY])
+      ;;
+    *)
+      exit 0
+      ;;
+  esac
+}
+
+describe config "Edit cluster command configuration"
+config() {
+  ${EDITOR:-vim} "$ROOT/deltafi/kind/cluster.yaml"
+}
+
+_check_deltafi_cli() {
+  if ! which deltafi >/dev/null; then
+    _info "Installing DeltaFi CLI"
+    pushd "$DELTAFI_PATH/deltafi-cli" > /dev/null
+    ./install.sh
+    popd > /dev/null
+    _ok "Local CLI"
+  fi
+
+  local DELTAFI_PATH
+  DELTAFI_PATH=$(_readlink -e "$(which deltafi)")
+  local EXPECTED_DELTAFI_PATH="$BASE_PATH/cluster"
+
+  if [[ "$DELTAFI_PATH" != "$EXPECTED_DELTAFI_PATH" ]]; then
+    _warn "deltafi command is linked to an unexpected location:"
+    _warn "    Expected: " "$EXPECTED_DELTAFI_PATH"
+    _warn "    Actual:   " "$DELTAFI_PATH"
+    _warn "Run kind/install.sh to reinitialize the links"
+    echo
+  fi
+}
+
+_check_docker() {
+  type -p docker 2>/dev/null 1>/dev/null || _exit_1 echo "You must install docker (or Docker Desktop) first"
+  if ! docker network inspect kind 2>/dev/null 1>/dev/null; then
+    docker network create kind > /dev/null && _ok "Docker network 'kind' created"
+  fi
+  _ok "Docker is ready"
+}
+
+_check_java() {
+  type -p java 2>/dev/null 1>/dev/null || _exit_1 echo "You must install Java OpenJDK 17 first"
+  local javaversion
+  javaversion=$(java -version 2>&1 | awk -F '"' '/version/ {print $2}')
+  # shellcheck disable=SC2072
+  if [[ "$javaversion" > "17.999" || "$javaversion" < "17.0" ]]; then
+    _exit_1 echo "JDK 17 required, you have $javaversion"
+  fi
+  _ok "Java JDK: $javaversion"
+}
+
+_install_node_cli() {
+  docker exec -i ${CLUSTER_NAME}-control-plane bash > /dev/null <<"EOF"
+cd /usr/dev/deltafi/deltafi-cli
+./install.sh
+EOF
+  _ok "CLI enabled in cluster node"
+}
+
+_update_k8s_config_permissions() {
+  docker exec -i ${CLUSTER_NAME}-control-plane bash > /dev/null <<"EOF"
+chmod +r /etc/kubernetes/admin.conf
+EOF
+  _ok "Updated k8s configuration file permissions"
+}
+
+_create_proxy() {
+  local PROXY_NAME=$1
+  local PROXY_REMOTE=$2
+  local PROXY_PORT=$3
+  # Create volume if not present
+  if ! docker volume inspect "$PROXY_NAME" > /dev/null; then
+    docker volume create "$PROXY_NAME"
+  fi
+  running="$(docker inspect -f '{{.State.Running}}' "${PROXY_NAME}" 2>/dev/null || true)"
+  if [ "${running}" != 'true' ]; then
+      docker run \
+            -d --name "${PROXY_NAME}" \
+            --restart=always --net=kind \
+            --mount source="${PROXY_NAME}",destination=/var/lib/registry \
+            -e REGISTRY_PROXY_REMOTEURL="${PROXY_REMOTE}" \
+            -p "127.0.0.1:${PROXY_PORT}:5000" \
+            registry:2
+      _ok "Local container proxy: $PROXY_NAME"
+  fi
+}
+
+_create_registry() {
+  local REGISTRY_NAME=$1
+  local REGISTRY_PORT=$2
+  # Create volume if not present
+  if ! docker volume inspect "$REGISTRY_NAME" > /dev/null; then
+    docker volume create "$REGISTRY_NAME"
+  fi
+  running="$(docker inspect -f '{{.State.Running}}' "${REGISTRY_NAME}" 2>/dev/null || true)"
+  if [ "${running}" != 'true' ]; then
+      docker run \
+            -d --name "${REGISTRY_NAME}" \
+            --restart=always --net=kind \
+            --mount source="${REGISTRY_NAME}",destination=/var/lib/registry \
+            -p "127.0.0.1:${REGISTRY_PORT}:5000" \
+            registry:2
+      _ok "Docker registry: $REGISTRY_NAME"
+  fi
+}
+
+_install_plugins() {
+  for plugin in "${PLUGINS[@]}"; do
+    local coordinates
+    coordinates=$(_plugin_field "$plugin" "plugin_coordinates")
+    local imageRepo
+    imageRepo=$(_plugin_field "$plugin" "image_repository_base")
+    local imagePullSecret
+    imagePullSecret=$(_plugin_field "$plugin" "pull_secret")
+    local deploymentExtras
+    deploymentExtras=$(_plugin_field "$plugin" "deployment_extras_file")
+
+    local options=()
+
+    if [[ $imageRepo != null ]]; then
+      options=("${options[@]}" "--image-repository-base $imageRepo")
+    fi
+
+    if [[ $imagePullSecret != null ]]; then
+      options=("${options[@]}" "--pull-secret $imagePullSecret")
+    fi
+
+    if [[ $deploymentExtras != null ]]; then
+      options=("${options[@]}" "--deployment-extras-file $plugin/$deploymentExtras")
+    fi
+
+    _attention "Installing $plugin"
+    _info -s "Plugin $plugin"
+    _info -a "Coordinates: $coordinates"
+    _info -a "Options:     \"${options[*]}\""
+
+    _conditional "$plugin plugin" _annotated_subshell _kind_deltafi install-plugin "$coordinates" "${options[@]}"
+  done
+}
+
+_restart_plugins() {
+  _attention "Restarting all plugins"
+  _conditional "Plugin restart" _annotated_subshell -h "Restarting deltafi-plugin group" kubectl delete pods --grace-period=0 -l group=deltafi-plugins
+}
+
+describe prerequisites "Install or warn about prerequisites for the KinD cluster"
+prerequisites() {
+  _check_docker
+
+  if _is_linux; then
+    if _tool_exists yum; then
+      $SUDO yum install -y curl wget java-17-openjdk java-17-openjdk-devel python3 python3-pip kubectl
+    elif _tool_exists apt; then
+      $SUDO apt-get install -y curl uidmap dbus-user-session fuse-overlayfs slirp4netns snapd openjdk-17-jdk python3 python3-pip
+      if ! _tool_exists kubectl; then
+        $SUDO snap install --classic kubectl
+        mkdir -p ~/.kube/kubens
+      fi
+      if ! _tool_exists helm; then
+        $SUDO snap install --classic helm
+      fi
+      if ! _tool_exists yq; then
+        $SUDO snap install yq
+      fi
+      if ! _tool_exists kubectx; then
+        $SUDO snap install kubectx
+      fi
+    fi
+  else
+    if ! type -p brew > /dev/null; then
+      _attention "Installing homebrew"
+      bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"
+    fi
+    _ok "Homebrew"
+    brew bundle install --file "$BASE_PATH"/Brewfile
+    _attention "Setting up JDK (may require your system password)"
+    sudo ln -sfn /opt/homebrew/opt/openjdk@17/libexec/openjdk.jdk /Library/Java/JavaVirtualMachines/openjdk-17.jdk
+    _ok "OpenJDK 17"
+    _warn "In order to use JDK 17, you may need to update your path like this:"
+    echo "    echo 'export PATH=\"/opt/homebrew/opt/openjdk@17/bin:\$PATH\"' >> ~/.zshrc"
+    echo "    echo 'export PATH=\"/opt/homebrew/opt/openjdk@17/bin:\$PATH\"' >> ~/.bashrc"
+  fi
+  _check_java
+}
+
+
+describe up "Turn up a KinD cluster (or re-apply cluster settings)"
+up() {
+  if [ -z ${CLUSTER_UP+x} ]; then
+    export CLUSTER_UP=true
+  else
+    return 0
+  fi
+
+  _attention "Initializing KinD cluster"
+  _check_deltafi_cli
+  _check_docker
+  if _is_linux; then
+    ${SUDO} mkdir -p -m 2775 "$PV_DIR"
+  else
+    mkdir -p "$PV_DIR"
+  fi
+  pushd "$BASE_PATH" > /dev/null
+
+  _create_registry kind-registry 5000
+  _create_proxy dockerio-proxy "https://registry-1.docker.io" 5001
+  _create_proxy k8s-proxy "https://k8s.gcr.io" 5002
+  _create_proxy ghcr-proxy "https://ghcr.io" 5003
+  _create_proxy quay-proxy "https://quay.io" 5004
+  _create_proxy k8s-registry-proxy "https://registry.k8s.io" 5005
+
+  if kind get clusters -q | grep "^${CLUSTER_NAME}$" > /dev/null; then
+    _ok "KinD ${CLUSTER_NAME} cluster already instantiated"
+  else
+    cat <<EOF | _conditional "KinD ${CLUSTER_NAME} cluster initialized" _annotated_subshell -v "•" -v "Not sure" -h "Initialize KinD cluster" kind create cluster -v 0 --wait 10m --name ${CLUSTER_NAME} --config=- || _fail "${CLUSTER_NAME} cluster instantiation"
+kind: Cluster
+apiVersion: kind.x-k8s.io/v1alpha4
+nodes:
+- role: control-plane
+  image: deltafi/deltafi-kind-node:1.24.12
+  kubeadmConfigPatches:
+  - |
+    kind: InitConfiguration
+    nodeRegistration:
+      kubeletExtraArgs:
+        node-labels: "ingress-ready=true,node-role.deltafi.org/compute=true,node-role.deltafi.org/storage=true"
+  extraPortMappings:
+  - containerPort: 80
+    hostPort: 80
+    protocol: TCP
+  - containerPort: 443
+    hostPort: 443
+    protocol: TCP
+  extraMounts:
+  - hostPath: "../.."
+    containerPath: /usr/dev
+  - hostPath: "${PV_DIR}"
+    containerPath: /data/deltafi
+containerdConfigPatches:
+- |-
+  [plugins."io.containerd.grpc.v1.cri".registry.mirrors."docker.io"]
+    endpoint = ["http://dockerio-proxy:5000"]
+  [plugins."io.containerd.grpc.v1.cri".registry.mirrors."k8s.gcr.io"]
+    endpoint = ["http://k8s-proxy:5000"]
+  [plugins."io.containerd.grpc.v1.cri".registry.mirrors."ghcr.io"]
+    endpoint = ["http://ghcr-proxy:5000"]
+  [plugins."io.containerd.grpc.v1.cri".registry.mirrors."quay.io"]
+    endpoint = ["http://quay-proxy:5000"]
+  [plugins."io.containerd.grpc.v1.cri".registry.mirrors."localhost:5000"]
+    endpoint = ["http://kind-registry:5000"]
+EOF
+    _ok "${CLUSTER_NAME} cluster instantiated"
+  fi
+
+  _k8s_add_namespace deltafi
+
+  local METRICS_SERVER_DEPLOYMENT="${BASE_PATH}/files/kind-metrics-server-deployment.yaml"
+  _is_arm && METRICS_SERVER_DEPLOYMENT="${BASE_PATH}/files/kind-metrics-server-deployment-arm64.yaml"
+
+  _conditional "Metrics server" _annotated_subshell -v "unchanged" -h "Deploy metrics server" kubectl apply -f "$METRICS_SERVER_DEPLOYMENT"
+  _conditional "Default namespace is deltafi" _annotated_subshell -h "Set DeltaFi namespace" kubens deltafi || _annotated_subshell kubens deltafi # Repeated because kubens fails on first execution in Debian
+  _install_node_cli
+  _enable_ui
+  _update_k8s_config_permissions
+  _k8s_init
+  _ok "KinD cluster fully instantiated"
+}
+
+_k8s_add_namespace() {
+  local ns=$1
+  if ! kubectl get namespace "$ns" > /dev/null 2>&1 ; then
+    cat <<EOF | _conditional "Create namespace $ns" _annotated_subshell kubectl apply -f -
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: $ns
+EOF
+  else
+    _ok "Namespace ${ns} exists"
+  fi
+}
+
+_k8s_add_pv() {
+  local name=deltafi-$1
+  local path=/data/deltafi/$1
+  local localpath=$PV_DIR/$1
+  local size=${2:-1G}
+  local owner=${3:-1000}
+  local namespace=${4:-deltafi}
+  if _is_linux; then
+    ${SUDO} mkdir -p -m 2775 "${localpath}"
+    ${SUDO} chown "${owner}:${owner}" "${localpath}"
+  else
+    mkdir -p "${localpath}"
+  fi
+  if ! kubectl get persistentvolumeclaim "$name" > /dev/null 2>&1 ; then
+    cat <<EOF | _conditional "Persistent volume: $name ($path)" _annotated_subshell kubectl apply -f -
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: $name
+  namespace: $namespace
+spec:
+  storageClassName: manual
+  selector:
+    matchLabels:
+      app: $name
+  accessModes:
+    - ReadWriteOnce
+  resources:
+    requests:
+      storage: $size
+---
+apiVersion: v1
+kind: PersistentVolume
+metadata:
+  name: $name
+  labels:
+    app: $name
+    type: local
+spec:
+  storageClassName: manual
+  capacity:
+    storage: $size
+  claimRef:
+    apiVersion: v1
+    kind: PersistentVolumeClaim
+    name: $name
+    namespace: $namespace
+  accessModes:
+  - ReadWriteOnce
+  persistentVolumeReclaimPolicy: Retain
+  hostPath:
+    path: "$path"
+---
+EOF
+  fi
+}
+
+_enable_ui() {
+  _check_local_fqdns
+  _conditional "Ingress nginx install" _annotated_subshell -v "unchanged" -h "Installing ingress-nginx..." kubectl apply -f "$BASE_PATH/files/ingress-nginx.yaml"
+  _info -s "Waiting for ingress-nginx..."
+  _conditional "Ingress operational" _annotated_subshell kubectl wait --namespace ingress-nginx \
+      --for=condition=ready pod \
+      --selector=app.kubernetes.io/component=controller \
+      --timeout=90s
+}
+
+_verify_or_replace_fqdn() {
+  local FQDN=$1
+  if grep -qxF "127.0.0.1 $FQDN" /etc/hosts; then
+    _ok "Active: $FQDN"
+  else
+    echo "127.0.0.1 $FQDN" | ${SUDO} tee -a /etc/hosts > /dev/null
+    _ok "Added: $FQDN"
+  fi
+}
+
+_check_local_fqdns() {
+  _info "Checking /etc/hosts config"
+  _info -h "You may be prompted for your sudo password"
+
+  for fqdn in "${FQDNS[@]}"; do
+    _verify_or_replace_fqdn "$fqdn"
+  done
+}
+
+describe install "Initialize a KinD cluster and install core DeltaFi"
+install() {
+  up
+  # Detect ARM processor and load arm64 overrides
+  local EXTRA=
+  _is_arm && EXTRA="-f deltafi/charts/deltafi/values-arm64.yaml"
+  _conditional "DeltaFi core installed" _annotated_subshell -h "Install DeltaFi core" -v "deprecated" -v "admin.conf" _kind_deltafi install "$@" -f deltafi/charts/deltafi/values-kind.yaml "$EXTRA"
+  _annotated_subshell -h "Set admin password" _kind_deltafi set-admin-password password
+  _info -e "If basic_auth is enabled user is 'admin', password is 'password'"
+  _info "Open the UI at http://local.deltafi.org"
+}
+
+_k8s_init() {
+  _k8s_add_namespace deltafi
+  _k8s_add_pv mongodb "${PV_STORAGE}" 1001
+  _k8s_add_pv minio "${PV_STORAGE}" 1000
+  _k8s_add_pv graphite "${PV_STORAGE}" 1000
+  _k8s_add_pv grafana "${PV_STORAGE}" 472
+  _k8s_add_pv loki "${PV_STORAGE}" 10001
+  _k8s_add_pv egress-sink "${PV_STORAGE}" 1000
+  _k8s_add_pv auth "${PV_STORAGE}" 1000
+  _ok "Kubernetes prerequisites"
+}
+
+describe down "Shut down the KinD cluster"
+down() {
+  _attention "Shutting down KinD cluster"
+  if kind get clusters 2>/dev/null | grep "^${CLUSTER_NAME}$" > /dev/null; then
+    [[ $# -gt 0 && "$1" == '-f' ]] || _are_you_sure
+    _annotated_subshell kind delete cluster --name ${CLUSTER_NAME}
+    if _is_linux; then
+      ${SUDO} rm -rf "$PV_DIR/mongodb"
+    else
+      rm -rf "$PV_DIR/mongodb"
+    fi
+    _down "KinD Cluster"
+  else
+    _fail "No deltafi cluster instantiated"
+  fi
+}
+
+describe manifest "List all docker images in use in the cluster"
+manifest() {
+  docker exec -it ${CLUSTER_NAME}-control-plane crictl images | sed '1d' | tr -s ' ' | sed 's| |:|' | sed 's| .*||'
+}
+
+describe destroy "Shut down the KinD cluster and remove persistent volume data"
+destroy() {
+  down "$@"
+  [[ $# -gt 0 && "$1" == '-f' ]] || _are_you_sure "Do you want to delete all local persistent volume data?"
+  if _is_linux; then
+    ${SUDO} rm -rf "$PV_DIR"
+  else
+    rm -rf "$PV_DIR"
+  fi
+  _down "KinD cluster destroyed"
+}
+
+describe help "Get additional details on commands"
+help() {
+  cat <<EOF
+DeltaFi KinD cluster CLI
+Version: $(cat "${DELTAFI_PATH}/deltafi-cli/VERSION")
+
+Usage:
+  cluster [flags] [command] [command arguments]
+
+Flags:
+  -h | --help   Get help on a particular command
+
+Commands:
+EOF
+  local cmds
+  IFS=' ' read -r -a cmds <<< "$(commands | xargs)"
+  local filtered=('Available' 'commands:' 'subcommands' 'tasks' 'commands')
+  for cmd in "${cmds[@]}"; do
+    local match=" ${cmd} "
+    # shellcheck disable=SC2199
+    if [[ " ${filtered[@]} " =~ $match ]]; then
+      continue
+    fi
+    printf "  %-13s %s\n" "$cmd" "$(describe --get "$cmd")"
+  done
+}
+
+describe shell "Open a tmux shell on the cluster control plane node"
+shell() {
+  echo "Launching k8s cluster shell..."
+  docker exec -w /usr/dev -it ${CLUSTER_NAME}-control-plane tmux -2 new-session -A -s KinD
+}
+
+_kind_deltafi() {
+  docker exec -i -u="$(id -u):$(id -g)" ${CLUSTER_NAME}-control-plane bash <<EOF
+cd /usr/dev
+TERM=screen-256color deltafi $@ 2>&1
+EOF
+}
+
+describe run "Execute a command on the cluster control node"
+run() {
+  docker exec -i ${CLUSTER_NAME}-control-plane bash <<EOF
+cd /usr/dev
+TERM=screen-256color $@
+EOF
+}
+
+describe uninstall "Uninstall the DeltaFi instance, leaving cluster intact"
+uninstall() {
+  _attention "Uninstalling DeltaFi"
+  _conditional "Uninstall DeltaFi" deltafi uninstall
+}
+
+describe loc "Control local builds and local installation to the cluster"
+_loc_help() {
+  cat <<EOF
+Command: cluster loc
+
+Usage:
+  cluster loc [ commands ]
+
+Options:
+  clean       Modifies build to do a clean build
+  build       Build all deltafi and plugin artifacts locally
+  install     Install deltafi and plugins on top of existing system (like a helm install)
+  reinstall   Uninstall and Install deltafi and plugins
+  uninstall   Uninstall deltafi and plugins
+  restart     Down a cluster, restart it, and install deltafi and plugins
+  bounce      Restart an application (deltafi-api, etc.).  App name must follow command
+  nocore      Skips building core DeltaFi and UI (build only)
+  destroy     Destroys the cluster before proceeding
+  -f | force  Skip "are you sure?"
+
+Examples:
+
+  cluster loc clean build restart -f
+    - Clean local build of deltafi/plugins and new cluster install, no questions
+
+  cluster loc build bounce deltafi-api
+    - Build all the things, then restart deltafi-api pod(s)
+
+  cluster loc install
+    - Install most recent local images
+
+  cluster loc build reinstall
+    - Build all the things, then uninstall/reinstall deltafi
+EOF
+  exit 0
+}
+loc() {
+
+  local CLEAN=
+  local BUILD=
+  local INSTALL=
+  local REINSTALL=
+  local UNINSTALL=
+  local RESTART=
+  local BOUNCE=
+  local FORCE=
+  local NOCORE=
+  local DESTROY=
+
+  [[ -z "$1" ]] && _loc_help
+
+  while [[ $# -gt 0 ]]; do
+    local cmd=$1
+    shift
+    case "$cmd" in
+      destroy)
+        DESTROY=destroy
+        ;;
+      clean)
+        CLEAN=clean
+        ;;
+      build)
+        BUILD=build
+        ;;
+      nocore)
+        NOCORE=nocore
+        ;;
+      install)
+        INSTALL=install
+        ;;
+      reinstall)
+        REINSTALL=reinstall
+        ;;
+      uninstall)
+        UNINSTALL=uninstall
+        ;;
+      restart)
+        RESTART=restart
+        ;;
+      bounce)
+        BOUNCE=$1
+        shift
+        ;;
+      force|-f)
+        FORCE=-f
+        ;;
+      -h|*)
+        _loc_help
+      ;;
+    esac
+  done
+
+  _check_java
+
+  # Down the cluster for clean, uninstall DeltaFi for restart
+  if [[ -n "$DESTROY" ]]; then
+    destroy
+  elif [[ -n "$RESTART" ]]; then
+    down $FORCE
+  elif [[ -n "$REINSTALL" ]]; then
+    uninstall $FORCE
+  elif [[ -n "$UNINSTALL" ]]; then
+    uninstall $FORCE
+  fi
+
+  [[ -n "$BUILD" ]] && _conditional "Local build" _local_build $CLEAN
+
+  [[ -n "$RESTART" || -n "$REINSTALL" || -n "$INSTALL" ]] && up
+
+  [[ -n "$BUILD" || -n "$RESTART" || -n "$REINSTALL" || -n "$BOUNCE" || -n "$INSTALL" ]] && _local_push
+
+  if [[ -n "$INSTALL" || -n "$REINSTALL" || -n "$RESTART" ]]; then
+    _attention "Installing DeltaFi core"
+    install -f deltafi/charts/deltafi/values-kind.yaml -f deltafi/charts/deltafi/values-local.yaml -f deltafi/charts/deltafi/values-alerting-test.yaml
+
+    _install_plugins
+  fi
+
+  if [[ -n "$BOUNCE" ]]; then
+    _attention "Bouncing $BOUNCE"
+    local pods
+    pods=$(kubectl get pods | cut -d' ' -f1 | grep "$BOUNCE")
+    _annotated_subshell -v "Warning" kubectl delete pod --grace-period=0 --force $pods
+    _down "Bounced pods matching $BOUNCE"
+  fi
+}
+
+
+_local_build() {
+
+  _attention "Building local images"
+
+  _create_registry kind-registry 5000
+  local BUILD_TARGETS=( assemble )
+
+  cd "$ROOT/deltafi"
+  _annotated_subshell git pull || _warn "Cannot pull latest"
+  if [[ $# -gt 0 && $1 == "clean" ]]; then
+    _attention "Cleaning deltafi build environment"
+    ./gradlew clean
+  fi
+
+  if [[ -z "$NOCORE" ]]; then
+    _attention "Building deltafi"
+    ./gradlew "${BUILD_TARGETS[@]}" -x test publishToMavenLocal docker dockerPushLocal
+
+    _attention "Building deltafi-ui"
+    cd "$ROOT/deltafi/deltafi-ui"
+    time docker build -t localhost:5000/deltafi-ui:latest .
+    docker push localhost:5000/deltafi-ui:latest
+  fi
+
+  export DELTAFI_PYTHON
+  DELTAFI_PYTHON="$ROOT/deltafi/deltafi-python/src"
+
+  for plugin in "${PLUGINS[@]}"; do
+    if [[ ! -d $ROOT/$plugin ]]; then
+      git clone "$(_url_for_plugin "$plugin")" "$ROOT/$plugin"
+    fi
+    cd "$ROOT/$plugin"
+    _annotated_subshell git pull || _warn "Cannot pull latest"
+    if [[ $# -gt 0 && $1 == "clean" ]]; then
+      _attention "Cleaning $plugin build environment"
+      ./gradlew clean
+    fi
+    _attention "Building $plugin"
+    ./gradlew "${BUILD_TARGETS[@]}" -x test docker dockerPushLocal
+  done
+
+}
+
+describe plugin "Control local plugin builds and installs"
+_plugin_help() {
+  cat <<EOF
+Command: cluster plugin
+
+Usage:
+  cluster plugin [ commands ]
+
+Options:
+  clean                          Modifies build to do a clean build
+  build                          Build all plugin artifacts locally
+  install                        Install plugins into an existing system
+  restart                        Restart all plugins running on system
+  add <name> <coordinates> <url> Add a plugin to the configuration
+  add-local <name> <group>       Add a local plugin to the configuration
+  -f | force                     Skip "are you sure?"
+
+Examples:
+
+  cluster plugin clean build install -f
+    - Clean local build of plugins and install the plugin, no questions
+
+EOF
+  exit 0
+}
+plugin() {
+
+  local CLEAN=
+  local BUILD=
+  local INSTALL=
+  local FORCE=
+  local RESTART=
+
+  [[ -z "$1" ]] && _plugin_help
+
+  while [[ $# -gt 0 ]]; do
+    local cmd=$1
+    shift
+    case "$cmd" in
+      config)
+        config
+        exit 0
+        ;;
+      add)
+        _plugin_add "$@"
+        exit 0
+        ;;
+      add-local)
+        _plugin_add_local "$@"
+        exit 0
+        ;;
+      clean)
+        CLEAN=clean
+        ;;
+      build)
+        BUILD=build
+        ;;
+      install)
+        INSTALL=install
+        ;;
+      restart)
+        RESTART=restart
+        ;;
+      force|-f)
+        FORCE=-f
+        ;;
+      -h|*)
+        _plugin_help
+      ;;
+    esac
+  done
+
+  _check_java
+
+  [[ -n "$BUILD" ]] && _plugin_build $CLEAN
+
+  if [[ -n "$INSTALL" ]]; then
+    _install_plugins
+  fi
+
+  if [[ -n "$INSTALL" || -n "$RESTART" ]]; then
+    _restart_plugins
+  fi
+}
+
+_plugin_add() {
+  _attention "Adding plugin $1"
+  yq -i ".plugins += [{\"name\": \"$1\", \"plugin_coordinates\": \"$2\", \"url\": \"$3\"}]" "$ROOT/deltafi/kind/cluster.yaml"
+}
+
+_plugin_add_local() {
+  _attention "Adding plugin $1"
+  yq -i ".plugins += [{\"name\": \"$1\", \"plugin_coordinates\": \"$2:$1:latest\", \"image_repository_base\": \"localhost:5000\"}]" "$ROOT/deltafi/kind/cluster.yaml"
+}
+
+_plugin_build() {
+
+  _attention "Building local plugins"
+
+  local BUILD_TARGETS=( assemble )
+
+  export DELTAFI_PYTHON
+  DELTAFI_PYTHON="$ROOT/deltafi/deltafi-python/src"
+
+  for plugin in "${PLUGINS[@]}"; do
+    if [[ ! -d $ROOT/$plugin ]]; then
+      local PLUGIN_URL
+      PLUGIN_URL=$(_url_for_plugin "$plugin")
+      if [[ "$PLUGIN_URL" != "" ]]; then
+        _annotated_subshell git clone "$PLUGIN_URL" "$ROOT/$plugin"
+      else
+        _attention "Cannot download source for $plugin"
+      fi
+    fi
+    if [[ -d $ROOT/$plugin ]]; then
+      cd "$ROOT/$plugin"
+      [[ -d "$ROOT/$plugin/.git" ]] && _annotated_subshell git pull || _warn "Cannot pull latest"
+      if [[ $# -gt 0 && $1 == "clean" ]]; then
+        _attention "Cleaning $plugin build environment"
+        ./gradlew clean
+      fi
+      _attention "Building $plugin"
+      ./gradlew "${BUILD_TARGETS[@]}" -x test docker dockerPushLocal
+    else
+      _attention "Unable to build $plugin: Source not in $ROOT/$plugin"
+    fi
+  done
+
+  _local_push
+}
+
+_local_push_one() {
+  docker push "$1" 1>/dev/null
+  run crictl pull "$1" 1>/dev/null
+}
+
+_local_push() {
+  pids=()
+  _attention "Syncing docker images"
+  _info -s "Starting sync"
+  for img in $(docker images | grep "localhost.*latest" | cut -f1 -d' '); do
+    _info -a "Syncing $img"
+    _local_push_one "$img" &
+    pids+=($!)
+  done
+
+  for pid in ${pids[*]}; do
+    wait "$pid"
+  done
+  _ok_annotated "Synced all docker images"
+}
+
+_local_cluster() {
+  local_build "$@"
+  up
+  install -f deltafi/charts/deltafi/values-kind.yaml -f deltafi/charts/deltafi/values-local.yaml -f deltafi/charts/deltafi/values-alerting-test.yaml
+  for plugin in "${PLUGINS[@]}"; do
+    run deltafi install-plugin "$plugin" -f "$plugin/charts/values-local.yaml"
+  done
+}
+
+normal=$(tput sgr0)
+bold=$(tput bold)
+red=$(tput setaf 1)
+green=$(tput setaf 2)
+yellow=$(tput setaf 3)
+blue=$(tput setaf 33)
+magenta=$(tput setaf 5)
+cyan=$(tput setaf 6)
+white=$(tput setaf 7)
+black=$(tput setaf 0)
+gray=$(tput setaf 8)
+orange=$(tput setaf 208)
+
+_log() {
+  local timestamp
+  timestamp=${gray}$(date -u +"%Y-%m-%dT%H:%M:%SZ")
+  echo "${yellow}>  $timestamp${normal} $1"
+}
+
+_attention() {
+  {
+    printf "\n%s\n\n" "${gray}       ▶ ${blue}${*}${normal}"
+  } 1>&2
+}
+
+_info() {
+  {
+    local prepend="${orange} ‣ ${normal}"
+    case $1 in
+    -w)
+      prepend="${red} ‼ ${normal}"
+      shift
+      ;;
+    -h)
+      prepend="${yellow} ! ${normal}"
+      shift
+      ;;
+    -s)
+      prepend="${blue} ╭ ${normal}"
+      shift
+      ;;
+    -e)
+      prepend="${blue} ╰ ${normal}"
+      shift
+      ;;
+    -q)
+      prepend="   "
+      shift
+      ;;
+    -a)
+      prepend="${blue} │${gray} "
+      shift
+      ;;
+    esac
+    printf "      %s\n" "${prepend}${*}${normal}"
+  } 1>&2
+}
+
+_warn() {
+  _info -w "$@"
+}
+
+_message() {
+  color="$1"
+  msg="$2"
+  shift 2
+  printf "[%s%-4s%s]   %s\n" "$color" "$msg" "${normal}" "$@"
+}
+
+_ok_annotated() {
+  printf "[%s%-4s%s] ${blue}╰${normal} %s\n" "$green" " OK" "${normal}" "$@"
+}
+
+_ok() {
+  _message "${green}" " OK " "$@"
+}
+
+_down() {
+  _message "${yellow}" "DOWN" "$@"
+}
+
+_fail() {
+  _message "${red}" "FAIL" "$@"
+}
+
+_conditional() {
+  title=$1
+  shift
+
+  if "${@}"; then
+    _ok_annotated $title
+  else
+    _fail $title
+    return 1
+  fi
+}
+
+_annotated_subshell() {
+
+  local filters=()
+  while true; do
+    case $1 in
+    -h)
+      _info -s "$2"
+      shift 2
+      ;;
+    -v)
+      filters+=("$2")
+      shift 2
+      ;;
+    *)
+      break
+      ;;
+    esac
+  done
+  {
+    "${@}" 2>&1 | while read -r line; do
+      local remove=
+      for filter in "${filters[@]}"; do
+        if [[ $line =~ $filter ]]; then
+          remove=true
+          continue
+        fi
+      done
+      [[ -n "${remove}" ]] && continue
+      _info -a "$line"
+    done
+  } 2>&1
+}
+
+# Initialize bask framework
+_init

@@ -1,0 +1,43 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: deltafi-ingress
+  labels:
+    app: deltafi-ingress
+    group: deltafi-core
+spec:
+  revisionHistoryLimit: 0
+  selector:
+    matchLabels:
+      app: deltafi-ingress
+      group: deltafi-core
+  template:
+    metadata:
+      labels:
+        app: deltafi-ingress
+        group: deltafi-core
+    spec:
+      {{- include "initContainersWaitForMongo" . | nindent 6 }}
+      containers:
+      - name: deltafi-ingress
+        image: {{ .Values.deltafi.core.image }}
+        env:
+        - name: JDK_JAVA_OPTIONS
+          value: "-Dcom.redhat.fips=false -Dschedule.actionEvents=false -Dschedule.maintenance=false -Dschedule.propertySync=true"
+        {{- include "coreEnvVars" . | nindent 8 }}
+        envFrom:
+        {{- include "keyStorePasswordSecret" . | nindent 8 }}
+        ports:
+        - containerPort: 8080
+        {{- include "defaultStartupProbe" . | nindent 8 }}
+        {{- include "defaultReadinessProbe" . | nindent 8 }}
+        {{- include "defaultLivenessProbe" . | nindent 8 }}
+        volumeMounts:
+        {{- include "coreVolumeMounts" . | nindent 8 }}
+      volumes:
+      {{- include "coreVolumes" . | nindent 6 }}
+      imagePullSecrets:
+      - name: docker-secret
+      serviceAccountName: deltafi-core
+      nodeSelector:
+        node-role.deltafi.org/storage: "true"

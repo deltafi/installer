@@ -1,0 +1,30 @@
+#!/usr/bin/env bash
+
+. "$DELTAFICLI_WORKDIR/common"
+
+cli_help_command() {
+  echo "
+Command: query
+
+Usage:
+  query QUERY
+  -c --color  - Colorize json output"
+  exit 1
+}
+
+ARGS=($@)
+[[ " ${ARGS[@]} " =~ " --help " ]] && cli_help_command
+[[ ${#ARGS[@]} -lt 2 ]] && cli_help_command
+
+JQ_ARGS="-M"
+shift 1
+if [[ "$1" == '-c' || "$1" == '--color' ]]; then
+  JQ_ARGS="-C"
+  shift 1
+fi
+
+QUERY=$(echo "$1" | jq -Rsa .)
+GRAPHQL_IP=$(deltafi serviceip deltafi-core-service)
+POST_QUERY="{ \"query\": $QUERY,\"variables\":null}"
+
+curl -s -X POST -H "Content-Type: application/json" -H "$PERMISSION" -H "$CLI_USER" -d "$POST_QUERY" "http://$GRAPHQL_IP/graphql" | jq "$JQ_ARGS" '.'

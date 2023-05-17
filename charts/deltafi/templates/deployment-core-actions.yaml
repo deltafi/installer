@@ -1,0 +1,30 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: deltafi-core-actions
+  labels:
+    app: deltafi-core-actions
+    group: deltafi-core
+spec:
+  revisionHistoryLimit: 0
+  selector:
+    matchLabels:
+      app: deltafi-core-actions
+      group: deltafi-core
+  template:
+    metadata:
+      labels:
+        app: deltafi-core-actions
+        group: deltafi-core
+    spec:
+      {{- include "initContainersWaitForCore" . | nindent 6 }}
+      containers:
+      - name: deltafi-core-actions
+        image: "{{ .Values.deltafi.core_actions.image }}"
+        {{- include "actionContainerSpec" . | nindent 8 }}
+      volumes:
+      {{- include "keyVolumes" . | nindent 6 }}
+      imagePullSecrets:
+      - name: docker-secret
+      nodeSelector:
+        node-role.deltafi.org/compute: "true"

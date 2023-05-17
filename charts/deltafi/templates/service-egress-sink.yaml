@@ -1,0 +1,14 @@
+{{- if .Values.deltafi.egress_sink.enabled -}}
+apiVersion: v1
+kind: Service
+metadata:
+  name: deltafi-egress-sink-service
+spec:
+  selector:
+    app: deltafi-egress-sink
+  type: NodePort
+  ports:
+  - protocol: TCP
+    port: 80
+    targetPort: 9292
+{{- end -}}

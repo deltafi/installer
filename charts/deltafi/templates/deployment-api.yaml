@@ -1,0 +1,47 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: deltafi-api
+  labels:
+    app: deltafi-api
+    group: deltafi-core
+spec:
+  revisionHistoryLimit: 0
+  selector:
+    matchLabels:
+      app: deltafi-api
+      group: deltafi-core
+  template:
+    metadata:
+      labels:
+        app: deltafi-api
+        group: deltafi-core
+    spec:
+      {{- include "initContainersWaitForCore" . | nindent 6 }}
+      containers:
+      - name: deltafi-api
+        image: {{ .Values.deltafi.api.image }}
+        imagePullPolicy: IfNotPresent
+        ports:
+        - containerPort: 9292
+        env:
+        - name: RACK_ENV
+          value: production
+        - name: RUNNING_IN_CLUSTER
+          value: "true"
+        - name: DELTAFI_UI_DOMAIN
+          value: {{ .Values.ingress.domain }}
+        {{- include "commonEnvVars" . | nindent 8 }}
+        {{- include "mongoEnvVars" . | nindent 8 }}
+        - name: WORKERS
+          value: {{ default "8" .Values.deltafi.api.workers | quote }}
+        - name: AUTH_MODE
+          value: {{ .Values.deltafi.auth.mode | quote }}
+        {{- include "defaultStartupProbe" . | nindent 8 }}
+        {{- include "defaultReadinessProbe" . | nindent 8 }}
+        {{- include "defaultLivenessProbe" . | nindent 8 }}
+      imagePullSecrets:
+      - name: docker-secret
+      serviceAccountName: deltafi-api
+      nodeSelector:
+        node-role.deltafi.org/compute: "true"
