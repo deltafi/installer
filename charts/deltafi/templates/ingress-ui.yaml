@@ -1,0 +1,66 @@
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: deltafi-ui-ingress
+  annotations:
+  {{- include "authAnnotations" . | nindent 4 }}
+    nginx.ingress.kubernetes.io/proxy-body-size: "{{ default 0 .Values.deltafi.ingress.envVar.HTTP_MAX_BODY_SIZE }}"
+    nginx.ingress.kubernetes.io/rewrite-target: /$1
+spec:
+  {{- if eq .Values.ingress.tls.enabled true }}
+  tls:
+  - secretName: {{ coalesce .Values.ingress.tls.secrets.ui .Values.ingress.tls.secrets.default }}
+  {{- end }}
+  rules:
+  - host: {{ .Values.ingress.domain }}
+    http:
+      paths:
+      - path: /(.*)
+        pathType: Prefix
+        backend:
+          service:
+            name: deltafi-ui-service
+            port:
+              number: 80
+      - path: /(api.*)
+        pathType: Prefix
+        backend:
+          service:
+            name: deltafi-api-service
+            port:
+              number: 80
+      - path: /(graphql)-core
+        pathType: Prefix
+        backend:
+          service:
+            name: deltafi-core-service
+            port:
+              number: 80
+      - path: /(deltafile/ingress)
+        pathType: Prefix
+        backend:
+          service:
+            name: deltafi-ingress-service
+            port:
+              number: 80
+      - path: /(survey)
+        pathType: Prefix
+        backend:
+          service:
+            name: deltafi-ingress-service
+            port:
+              number: 80
+      - path: /(deltafile/annotate/.*)
+        pathType: Prefix
+        backend:
+          service:
+            name: deltafi-core-service
+            port:
+              number: 80
+      - path: /(docs.*)
+        pathType: Prefix
+        backend:
+          service:
+            name: deltafi-docs-service
+            port:
+              number: 80

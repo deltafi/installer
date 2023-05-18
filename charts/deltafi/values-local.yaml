@@ -1,0 +1,26 @@
+# DeltaFi config
+deltafi:
+  ui:
+    title: DeltaFi (DinK local)
+    image: localhost:5000/deltafi-ui:latest
+  core_actions:
+    image: localhost:5000/deltafi-core-actions:latest
+  passthrough:
+    image: localhost:5000/deltafi-passthrough:latest
+  core:
+    image: localhost:5000/deltafi-core:latest
+    propertyOverrides:
+      deltafi-common.yaml: |-
+        deltafi:
+          plugins:
+            imageRepositoryBase: "localhost:5000"
+  docs:
+    image: localhost:5000/deltafi-docs:latest
+  auth:
+    image: localhost:5000/deltafi-auth:latest
+  api:
+    image: localhost:5000/deltafi-api:latest
+  egress_sink:
+    image: localhost:5000/deltafi-egress-sink:latest
+  nodemonitor:
+    image: localhost:5000/deltafi-nodemonitor:latest

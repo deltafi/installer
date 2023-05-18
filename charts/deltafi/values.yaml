@@ -1,0 +1,272 @@
+# DeltaFi config
+deltafi:
+  ssl:
+    secret: keystore-secret
+    passwordSecret: keystore-password-secret
+    mountPath: /etc/pki
+    protocol: TLSv1.2
+    keyStoreName: keyStore.p12
+    keyStoreType: PKCS12
+    trustStoreName: trustStore.jks
+    trustStoreType: JKS
+  core_actions:
+    image: deltafi/deltafi-core-actions:1.0.0-RC1
+  passthrough:
+    image: deltafi/deltafi-passthrough:1.0.0-RC1
+    enabled: true
+  core:
+    image: deltafi/deltafi-core:1.0.0-RC1
+    mongo_host: deltafi-mongodb
+  docs:
+    image: deltafi/deltafi-docs:1.0.0-RC1
+    enabled: true
+  ingress:
+    envVar:
+      HTTP_MAX_BODY_SIZE: 5G
+  auth:
+    image: deltafi/deltafi-auth:1.0.0-RC1
+    mode: basic # basic, cert, or disabled
+    secret: auth-secret
+    entityResolver:
+      enabled: false
+      image: deltafi/deltafi-entity-resolver:1.0.0-RC1
+      url: http://127.0.0.1:8080/
+  api:
+    image: deltafi/deltafi-api:1.0.0-RC1
+  ui:
+    image: deltafi/deltafi-ui:1.0.0-RC1
+  egress_sink:
+    enabled: true
+    image: deltafi/deltafi-egress-sink:1.0.0-RC1
+  nodemonitor:
+    image: deltafi/deltafi-nodemonitor:1.0.0-RC1
+    envVars:
+      - name: GRAPHITE_HOST
+        value: deltafi-graphite
+      - name: GRAPHITE_PORT
+        value: "2003"
+      - name: PERIOD
+        value: "9"
+
+# Kubernetes ingress config
+ingress:
+  domain: local.deltafi.org
+  tls:
+    enabled: false
+    secrets:
+      default: local-deltafi-org
+# MinIO config
+minio:
+  environment:
+    MINIO_API_DELETE_CLEANUP_INTERVAL: 1s
+  mode: standalone
+  existingSecret: minio-keys
+  resources:
+    requests:
+      memory: 2Gi
+  replicas: 1
+  persistence:
+    enabled: true
+    existingClaim: deltafi-minio
+  service:
+    type: NodePort
+  nodeSelector:
+    node-role.deltafi.org/storage: "true"
+# MongoDB config
+mongodb:
+  image:
+    repository: bitnami/mongodb
+    tag: 5.0.14
+  architecture: standalone
+  useStatefulSet: false
+  auth:
+    existingSecret: mongodb-passwords
+    enabled: true
+    database: deltafi
+    username: mongouser
+  service:
+    type: NodePort
+  persistence:
+    enabled: true
+    existingClaim: deltafi-mongodb
+  volumePermissions:
+    enabled: true
+  nodeSelector:
+    node-role.deltafi.org/storage: "true"
+# Redis config
+redis:
+  image:
+    repository: bitnami/redis
+    tag: 7.0.8
+  architecture: standalone
+  auth:
+    existingSecret: redis-password
+    enabled: true
+  commonConfiguration: |-
+    # Diable AOF https://redis.io/topics/persistence#append-only-file
+    appendonly no
+    # Disable RDB persistence
+    save ""
+  master:
+    persistence:
+      enabled: false
+    nodeSelector:
+      node-role.deltafi.org/compute: "true"
+# Kubernetes Dashboard config
+kubernetes-dashboard:
+  image:
+    tag: v2.7.0
+  securityContext: null
+  metricsScraper:
+    enabled: true
+    image:
+      tag: v1.0.9
+  protocolHttp: true
+  service:
+    externalPort: 80
+  settings:
+    clusterName: 'DeltaFi'
+    itemsPerPage: 50
+    labelsLimit: 3
+    logsAutoRefreshTimeInterval: 5
+    resourceAutoRefreshTimeInterval: 5
+    disableAccessDeniedNotifications: false
+    defaultNamespace: deltafi
+    namespaceFallbackList:
+      - default
+
+grafana:
+  image:
+    tag: 9.4.7
+  persistence:
+    enabled: true
+    existingClaim: deltafi-grafana
+  nodeSelector:
+    node-role.deltafi.org/storage: "true"
+  grafana.ini:
+    auth.anonymous:
+      enabled: false
+    auth.basic:
+      enabled: false
+    auth.proxy:
+      enabled: true
+      header_name: X-User-Name
+      headers: Role:X-Metrics-Role
+      auto_sign_up: true
+    analytics:
+      reporting_enabled: false
+      check_for_updates: false
+      check_for_plugin_updates: false
+      enable_feedback_links: false
+    dashboards:
+      min_refresh_interval: "10s"
+    log:
+      mode: console
+    log.console:
+      format: json
+    unified_alerting:
+      enabled: true
+    alerting:
+      enabled: false
+    security:
+      allow_embedding: true
+  sidecar:
+    dashboards:
+      enabled: true
+      provider:
+        folder: "DeltaFi"
+  datasources:
+    datasources.yaml:
+      apiVersion: 1
+      datasources:
+      - name: Graphite
+        type: graphite
+        access: proxy
+        url: http://deltafi-graphite:8080
+        editable: false
+        isDefault: true
+        version: 2
+        uid: deltafi-graphite
+      - name: Loki
+        type: loki
+        access: proxy
+        url: http://deltafi-loki:3100
+        editable: false
+        isDefault: false
+        version: 2
+        uid: deltafi-loki
+promtail:
+  image:
+    tag: 2.8.0
+  persistence:
+    enabled: true
+    existingClaim: deltafi-promtail
+  config:
+    clients:
+      - url: http://deltafi-loki:3100/loki/api/v1/push
+    snippets:
+      pipelineStages:
+        - cri: {}
+        - labeldrop:
+            - filename
+        # Label action logs
+        - match:
+            selector: '{ app=~".+" } |~ "\"action\":\"[^\"]+\""'
+            stages:
+            - json:
+                expressions:
+                  action: action
+            - labels:
+                action:
+            - static_labels:
+                type: 'ACTION'
+        # Label audit logs
+        - match:
+              selector: '{ app=~".*" } |= "\"loggerName\":\"AUDIT\""'
+              stages:
+              - json:
+                  expressions:
+                    user: user
+              - labels:
+                  user:
+              - static_labels:
+                  type: "AUDIT"
+        # Squelch nasty graphite debug logs
+        - match:
+            selector: '{app="graphite"}'
+            stages:
+              # Filtering out graphite debug logs containing "(Tagging|Tagged)"
+              - drop:
+                  expression: "Tagg"
+
+loki:
+  image:
+    tag: 2.8.0
+  persistence:
+    enabled: true
+    existingClaim: deltafi-loki
+  nodeSelector:
+    node-role.deltafi.org/storage: "true"
+  extraArgs:
+    log.level: warn
+  config:
+    compactor:
+      retention_enabled: true
+    query_scheduler:
+      max_outstanding_requests_per_tenant: 500
+  livenessProbe:
+   initialDelaySeconds: 5
+  readinessProbe:
+   initialDelaySeconds: 5
+
+# Graphite Configuration
+graphite:
+  image:
+    tag: 1.1.10-4
+  persistence:
+    enabled: true
+    existingClaim: deltafi-graphite
+  nodeSelector:
+    node-role.deltafi.org/storage: "true"
+  statsd:
+    interface: TCP

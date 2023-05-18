@@ -1,0 +1,46 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: deltafi-ui
+  labels:
+    app: deltafi-ui
+    group: deltafi-core
+spec:
+  revisionHistoryLimit: 0
+  selector:
+    matchLabels:
+      app: deltafi-ui
+      group: deltafi-core
+  template:
+    metadata:
+      labels:
+        app: deltafi-ui
+        group: deltafi-core
+    spec:
+      initContainers:
+      - name: wait-for-api
+        image: busybox:1.36.0
+        command:
+        - 'sh'
+        - '-c'
+        - >
+          until nc -z -w 2 deltafi-api-service 80 && echo deltafi-api ok;
+            do sleep 1;
+          done
+      containers:
+      - name: deltafi-ui
+        image: {{ .Values.deltafi.ui.image }}
+        imagePullPolicy: IfNotPresent
+        ports:
+        - containerPort: 80
+        env:
+        - name: RUNNING_IN_CLUSTER
+          value: "true"
+        {{- include "defaultStartupProbe" . | nindent 8 }}
+        {{- include "defaultReadinessProbe" . | nindent 8 }}
+        {{- include "defaultLivenessProbe" . | nindent 8 }}
+      imagePullSecrets:
+      - name: docker-secret
+      serviceAccountName: deltafi-api
+      nodeSelector:
+        node-role.deltafi.org/compute: "true"

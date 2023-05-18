@@ -1,0 +1,37 @@
+#!/usr/bin/env bash
+
+. "$DELTAFICLI_WORKDIR/common"
+
+cli_help_command() {
+  echo "
+Command: serviceip
+
+Usage:
+  serviceip SERVICE"
+  exit 1
+}
+
+[[ " $* " =~ " --help " ]] && cli_help_command
+
+SERVICE=$2
+[[ $# -lt 2 ]] && cli_help_command
+
+
+compose_service_ip() {
+  echo "${1}:8888"
+}
+
+k8s_service_ip() {
+  KUBECTL_CMD="${KUBECTL_BIN} get services -o wide"
+  IP=$($KUBECTL_CMD | grep "${1}" | tail -n 1 | awk '{print $3}')
+  [[ "" == "$IP" ]] && exit 1
+  echo "$IP"
+}
+
+if _is_standalone; then
+  compose_service_ip "${SERVICE}"
+else
+  k8s_service_ip "${SERVICE}"
+fi
+
+

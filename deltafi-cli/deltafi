@@ -1,0 +1,345 @@
+#!/usr/bin/env bash
+set -e
+
+# _readlink()
+#
+# Usage:
+#   _readlink [-e|-f|<options>] <path/to/symlink>
+#
+# Options:
+#   -f  All but the last component must exist.
+#   -e  All components must exist.
+#
+# Description:
+#   Wrapper for `readlink` that provides portable versions of GNU `readlink -f`
+#   and `readlink -e`, which canonicalize by following every symlink in every
+#   component of the given name recursively.
+#
+# More Information:
+#   http://stackoverflow.com/a/1116890
+_readlink() {
+  local _target_path
+  local _target_file
+  local _final_directory
+  local _final_path
+  local _option
+
+  for __arg in "${@:-}"
+  do
+    case "${__arg}" in
+      -e|-f)
+        _option="${__arg}"
+        ;;
+      -*)
+        # do nothing
+        # ':' is bash no-op
+        :
+        ;;
+      *)
+        if [[ -z "${_target_path:-}" ]]
+        then
+          _target_path="${__arg}"
+        fi
+        ;;
+    esac
+  done
+
+  if [[ -z "${_option}" ]]
+  then
+    readlink "${@}"
+  else
+    if [[ -z "${_target_path:-}" ]]
+    then
+      printf "_readlink: missing operand\\n"
+      return 1
+    fi
+
+    cd "$(dirname "${_target_path}")" || return 1
+    _target_file="$(basename "${_target_path}")"
+
+    # Iterate down a (possible) chain of symlinks
+    while [[ -L "${_target_file}" ]]
+    do
+      _target_file="$(readlink "${_target_file}")"
+      cd "$(dirname "${_target_file}")" || return 1
+      _target_file="$(basename "${_target_file}")"
+    done
+
+    # Compute the canonicalized name by finding the physical path
+    # for the directory we're in and appending the target file.
+    _final_directory="$(pwd -P)"
+    _final_path="${_final_directory}/${_target_file}"
+
+    if [[ "${_option}" == "-f" ]]
+    then
+      printf "%s\\n" "${_final_path}"
+      return 0
+    elif [[ "${_option}" == "-e" ]]
+    then
+      if [[ -e "${_final_path}" ]]
+      then
+        printf "%s\\n" "${_final_path}"
+        return 0
+      else
+        return 1
+      fi
+    else
+      return 1
+    fi
+  fi
+}
+
+_exit_1() {
+  {
+    printf "%s " "$(tput setaf 1)!$(tput sgr0)"
+    "${@}"
+  } 1>&2
+  exit 1
+}
+
+_command_check() {
+  command -v $1 &> /dev/null || _exit_1 echo "Command '$@' is not installed. DeltaFi CLI cannot execute."
+}
+
+export DELTAFICLI_WORKDIR=$(cd $(dirname $(_readlink -f $0)) && pwd)
+export DELTAFI_DIR=$(dirname "$DELTAFICLI_WORKDIR")
+
+
+_command_check jq
+_command_check curl
+_command_check sed
+_command_check kubectl
+_command_check ruby
+
+# shellcheck source=common
+. "$DELTAFICLI_WORKDIR/common"
+
+cli_help() {
+  cli_name=${0##*/}
+  cat "$DELTAFICLI_WORKDIR/logo"
+  echo "
+DeltaFi CLI
+Version: $(cat $DELTAFICLI_WORKDIR/VERSION)
+
+Usage: $cli_name [command]
+
+Commands:
+  did                    show did for filename
+  egress-flow            start, stop or validate an egress flow
+  enrich-flow            start, stop or validate an enrich flow
+  export-config          export all the loaded flow configurations as yaml
+  export-egress-plan     export a single egress flow plan by name as JSON
+  export-enrich-plan     export a single enrich flow plan by name as JSON
+  export-ingress-plan    export a single ingress flow plan by name as JSON
+  export-transform-plan  export a single transform flow plan by name as JSON
+  export-rules           export all ingress-flow assignment rules as JSON
+  ingress                ingress one or more files to a flow
+  ingress-flow           start, stop or validate an ingress flow
+  install                install/upgrade the DeltaFi core
+  install-plugin         install/upgrade a DeltaFi plugin
+  list-actions           list the actions registered with deltafi
+  list-flows             list the flows in the system with their status
+  list-plans             list all flow plans within deltafi
+  list-plugins           list all installed plugins
+  list-policies          list delete policies
+  load-plans             load the flow plans and variables for the given plugin
+  load-policies          load delete policies from a JSON file
+  load-rules             load ingress flow assignment rules from a JSON file
+  minio-cli              launch the minio CLI
+  mongo-cli              launch the mongo CLI
+  mongo-eval             eval a command in mongo
+  mongo-migrate          run mongo migrations
+  performance-test       run performance tests against DeltaFi
+  plugin-customization   manage plugin customization configuration
+  plugin-image-repo      manage the image repositories that hold plugin images
+  plugin-init            create a new plugin project
+  query                  send a query to graphql
+  redis-cli              launch the redis CLI
+  redis-latency          monitor redis latency
+  redis-stats            monitor redis connection stats
+  redis-watch            watch every command issued to redis
+  secrets                show k8s secrets
+  serviceip              show service IP
+  set-admin-password     set the admin password
+  start                  (alias for install)
+  status                 show status of system
+  system-snapshot        manage system state snapshots
+  system-property        manage system properties
+  trace                  show trace data for a DID
+  transform-flow         start, stop or validate a transform flow
+  update                 (alias for install)
+  upgrade                (alias for install)
+  uninstall              uninstall the DeltaFi core
+  uninstall-plugin       uninstall a DeltaFi plugin
+  version                print the current core version of DeltaFi
+  versions               show running versions
+  *                      show help
+
+Flags:
+  --help            show help for a specific command
+  -v                enable verbose output
+"
+  exit 1
+}
+
+[ ! -f "$DELTAFICLI_WORKDIR/config" ] \
+  && echo "ERROR: No $DELTAFICLI_WORKDIR/config file found. " \
+  && echo "cp $DELTAFICLI_WORKDIR/config.template $DELTAFICLI_WORKDIR/config and adjust." \
+  && exit 1
+
+. "$DELTAFICLI_WORKDIR/config"
+
+if [ "$2" == "-v" ]; then
+  cli_log "ENV variables"
+  env | grep "DELTAFICLI_*"
+fi
+
+case "$1" in
+  did)
+    "$DELTAFICLI_WORKDIR/commands/did" "$@"
+    ;;
+  egress-flow)
+    "$DELTAFICLI_WORKDIR/commands/egress-flow" "$@"
+    ;;
+  enrich-flow)
+    "$DELTAFICLI_WORKDIR/commands/enrich-flow" "$@"
+    ;;
+  event)
+    "$DELTAFICLI_WORKDIR/commands/event" "$@"
+    ;;
+  export-config)
+    "$DELTAFICLI_WORKDIR/commands/export-config" "$@"
+    ;;
+  export-egress-plan)
+    "$DELTAFICLI_WORKDIR/commands/export-egress-plan" "$@"
+    ;;
+  export-enrich-plan)
+    "$DELTAFICLI_WORKDIR/commands/export-enrich-plan" "$@"
+    ;;
+  export-ingress-plan)
+    "$DELTAFICLI_WORKDIR/commands/export-ingress-plan" "$@"
+    ;;
+  export-transform-plan)
+    "$DELTAFICLI_WORKDIR/commands/export-transform-plan" "$@"
+    ;;
+  export-rules)
+    "$DELTAFICLI_WORKDIR/commands/export-rules" "$@"
+    ;;
+  ingress)
+    "$DELTAFICLI_WORKDIR/commands/ingress" "$@"
+    ;;
+  ingress-flow)
+    "$DELTAFICLI_WORKDIR/commands/ingress-flow" "$@"
+    ;;
+  install|update|upgrade|start)
+    "$DELTAFICLI_WORKDIR/commands/install" "$@"
+    ;;
+  install-plugin)
+    "$DELTAFICLI_WORKDIR/commands/install-plugin" "$@"
+    ;;
+  list-actions)
+    "$DELTAFICLI_WORKDIR/commands/list-actions" "$@"
+    ;;
+  list-flows)
+    "$DELTAFICLI_WORKDIR/commands/list-flows" "$@"
+    ;;
+  list-plans)
+    "$DELTAFICLI_WORKDIR/commands/list-plans" "$@" | less -XSE
+    ;;
+  list-plugins)
+    "$DELTAFICLI_WORKDIR/commands/list-plugins" "$@"
+    ;;
+  list-policies)
+    "$DELTAFICLI_WORKDIR/commands/list-policies" "$@"
+    ;;
+  load-plans)
+    "$DELTAFICLI_WORKDIR/commands/load-plans" "$@"
+    ;;
+  load-policies)
+    "$DELTAFICLI_WORKDIR/commands/load-policies" "$@"
+    ;;
+  load-rules)
+    "$DELTAFICLI_WORKDIR/commands/load-rules" "$@"
+    ;;
+  minio-cli)
+    "$DELTAFICLI_WORKDIR/commands/minio-cli" "$@"
+    ;;
+  mongo-cli)
+    "$DELTAFICLI_WORKDIR/commands/mongo-cli" "$@"
+    ;;
+  mongo-eval)
+      "$DELTAFICLI_WORKDIR/commands/mongo-eval" "$@"
+      ;;
+  mongo-migrate)
+    "$DELTAFICLI_WORKDIR/commands/mongo-migrate" "$@"
+    ;;
+  performance-test)
+    BUNDLE_GEMFILE=$DELTAFICLI_WORKDIR/Gemfile bundle exec "$DELTAFICLI_WORKDIR/commands/performance-test" "$@"
+    ;;
+  plugin-customization)
+    "$DELTAFICLI_WORKDIR/commands/plugin-customization" "$@"
+    ;;
+  plugin-image-repo)
+    "$DELTAFICLI_WORKDIR/commands/plugin-image-repo" "$@"
+    ;;
+  plugin-init)
+    "$DELTAFICLI_WORKDIR/commands/plugin-init" "$@"
+    ;;
+  query)
+    "$DELTAFICLI_WORKDIR/commands/query" "$@"
+    ;;
+  redis-cli)
+    "$DELTAFICLI_WORKDIR/commands/redis-cli" "$@"
+    ;;
+  redis-latency)
+    "$DELTAFICLI_WORKDIR/commands/redis-latency" "$@"
+    ;;
+  redis-stats)
+    "$DELTAFICLI_WORKDIR/commands/redis-stats" "$@"
+    ;;
+  redis-watch)
+    "$DELTAFICLI_WORKDIR/commands/redis-watch" "$@"
+    ;;
+  status)
+    "$DELTAFICLI_WORKDIR/commands/status" "$@"
+    ;;
+  uninstall)
+    "$DELTAFICLI_WORKDIR/commands/uninstall" "$@"
+    ;;
+  uninstall-plugin)
+    "$DELTAFICLI_WORKDIR/commands/uninstall-plugin" "$@"
+    ;;
+  secrets)
+    "$DELTAFICLI_WORKDIR/commands/secrets" "$@"
+    ;;
+  serviceip)
+    "$DELTAFICLI_WORKDIR/commands/serviceip" "$@"
+    ;;
+  set-admin-password)
+    "$DELTAFICLI_WORKDIR/commands/set-admin-password" "$@"
+    ;;
+  system-property)
+    "$DELTAFICLI_WORKDIR/commands/system-property" "$@"
+    ;;
+  system-snapshot)
+    "$DELTAFICLI_WORKDIR/commands/system-snapshot" "$@"
+    ;;
+  trace)
+    "$DELTAFICLI_WORKDIR/commands/trace" "$@"
+    ;;
+  transform-flow)
+    "$DELTAFICLI_WORKDIR/commands/transform-flow" "$@"
+    ;;
+  versions)
+    "$DELTAFICLI_WORKDIR/commands/versions" "$@"
+    ;;
+  version)
+    cat "$DELTAFICLI_WORKDIR"/VERSION
+    ;;
+  logo)
+    cat "$DELTAFICLI_WORKDIR"/logo
+    ;;
+  *)
+    cli_help
+    ;;
+esac

@@ -1,0 +1,65 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: deltafi-auth
+  labels:
+    app: deltafi-auth
+    group: deltafi-core
+spec:
+  revisionHistoryLimit: 0
+  selector:
+    matchLabels:
+      app: deltafi-auth
+      group: deltafi-core
+  template:
+    metadata:
+      labels:
+        app: deltafi-auth
+        group: deltafi-core
+    spec:
+      volumes:
+        - name: deltafi-auth
+          persistentVolumeClaim:
+            claimName: deltafi-auth
+      containers:
+      {{ if .Values.deltafi.auth.entityResolver.enabled }}
+      - name: deltafi-entity-resolver
+        image: {{ .Values.deltafi.auth.entityResolver.image }}
+        volumeMounts:
+          - name: deltafi-auth
+            mountPath: /data
+        env:
+        - name: DATA_DIR
+          value: /data
+      {{ end }}
+      - name: deltafi-auth
+        image: {{ .Values.deltafi.auth.image }}
+        env:
+        - name: DOMAIN
+          value: {{ .Values.ingress.domain }}
+        - name: DATA_DIR
+          value: /data
+        - name: WORKERS
+          value: {{ default "8" .Values.deltafi.auth.workers | quote }}
+        {{ if .Values.deltafi.auth.entityResolver.enabled }}
+        - name: ENTITY_RESOLVER_ENABLED
+          value: "true"
+        - name: ENTITY_RESOLVER_URL
+          value: {{ .Values.deltafi.auth.entityResolver.url | default "http://127.0.0.1:8080/" }}
+        {{ end }}
+        imagePullPolicy: IfNotPresent
+        ports:
+        - containerPort: 9292
+        {{- include "defaultStartupProbe" . | nindent 8 }}
+        {{- include "defaultReadinessProbe" . | nindent 8 }}
+        {{- include "defaultLivenessProbe" . | nindent 8 }}
+        volumeMounts:
+          - name: deltafi-auth
+            mountPath: /data
+      imagePullSecrets:
+      - name: docker-secret
+      serviceAccountName: deltafi-auth
+      nodeSelector:
+        node-role.deltafi.org/storage: "true"
+  strategy:
+    type: Recreate

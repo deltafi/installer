@@ -1,0 +1,48 @@
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: deltafi-core-worker
+  labels:
+    app: deltafi-core
+    group: deltafi-core
+spec:
+  serviceName: core-worker
+  revisionHistoryLimit: 0
+  selector:
+    matchLabels:
+      app: deltafi-core
+      group: deltafi-core
+  template:
+    metadata:
+      labels:
+        app: deltafi-core
+        group: deltafi-core
+    spec:
+      {{- include "initContainersWaitForMongo" . | nindent 6 }}
+      containers:
+      - name: deltafi-core
+        image: {{ .Values.deltafi.core.image }}
+        env:
+        - name: JDK_JAVA_OPTIONS
+          value: "-Dcom.redhat.fips=false -Dschedule.maintenance=false -Dschedule.diskSpace=false"
+        - name: UNIQUE_ID
+          valueFrom:
+            fieldRef:
+              fieldPath: metadata.name
+        {{- include "coreEnvVars" . | nindent 8 }}
+        envFrom:
+        {{- include "keyStorePasswordSecret" . | nindent 8 }}
+        ports:
+        - containerPort: 8080
+        {{- include "defaultStartupProbe" . | nindent 8 }}
+        {{- include "defaultReadinessProbe" . | nindent 8 }}
+        {{- include "defaultLivenessProbe" . | nindent 8 }}
+        volumeMounts:
+        {{- include "coreVolumeMounts" . | nindent 8 }}
+      volumes:
+      {{- include "coreVolumes" . | nindent 6 }}
+      imagePullSecrets:
+      - name: docker-secret
+      serviceAccountName: deltafi-core
+      nodeSelector:
+        node-role.deltafi.org/compute: "true"

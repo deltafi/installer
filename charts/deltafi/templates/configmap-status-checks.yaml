@@ -1,0 +1,59 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: deltafi-status-checks
+  namespace: deltafi
+data:
+  StatefulSetCheck: |
+    expected_stateful_sets:
+    - deltafi-core-worker
+    - deltafi-graphite
+    - deltafi-loki
+    - deltafi-redis-master
+  DeploymentCheck: |
+    expected_deployments:
+    - deltafi-api
+    - deltafi-core
+    - deltafi-core-actions
+    - deltafi-egress-sink
+    - deltafi-grafana
+    - deltafi-ingress
+    - deltafi-kubernetes-dashboard
+    - deltafi-minio
+    - deltafi-mongodb
+    - deltafi-monitor
+    - deltafi-ui
+  IngressCheck: |
+    expected_ingresses:
+    - deltafi-grafana
+    - deltafi-graphite
+    - deltafi-ingress
+    - deltafi-kubernetes-dashboard
+    - deltafi-minio
+    - deltafi-ui-ingress
+  ServiceCheck: |
+    expected_services:
+    - deltafi-api-service
+    - deltafi-core-service
+    - deltafi-egress-sink-service
+    - deltafi-grafana
+    - deltafi-graphite
+    - deltafi-ingress-service
+    - deltafi-kubernetes-dashboard
+    - deltafi-loki
+    - deltafi-loki-headless
+    - deltafi-loki-memberlist
+    - deltafi-minio
+    - deltafi-mongodb
+    - deltafi-redis-headless
+    - deltafi-redis-master
+    - deltafi-ui-service
+  StorageCheck: |
+    expected_volume_claims:
+    - deltafi-auth
+    - deltafi-egress-sink
+    - deltafi-grafana
+    - deltafi-graphite
+    - deltafi-loki
+    - deltafi-minio
+    - deltafi-mongodb
