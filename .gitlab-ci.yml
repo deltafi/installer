@@ -24,7 +24,7 @@ build:
     - git config --global user.email "gitlab@gitlab.com"
     - git config --global user.name "Gitlab CI/CD"
     - rm -rf ${CI_BUILDS_DIR}/deltafi-pristine
-    - git clone https://gitlab-ci-token:${CI_JOB_TOKEN}@gitlab.com/systolic/deltafi/deltafi -b "${VERSION}" ${CI_BUILDS_DIR}/deltafi-pristine
+    - git clone https://gitlab-ci-token:${CI_JOB_TOKEN}@gitlab.com/deltafi/deltafi -b "${VERSION}" ${CI_BUILDS_DIR}/deltafi-pristine
   script:
     - rm -rf *
     - git checkout README.md
