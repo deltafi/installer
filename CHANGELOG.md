@@ -5,33 +5,42 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/)
 
 All [Unreleased] changes can be viewed in GitLab.
 
+## [1.0.0] - 2023-06-21
+
+### Fixed
+- Querying for the distinct annotation keys no longer fails if a DeltaFile is missing the `annotationKeys` field
+
+### Deprecated
+- All releases prior to 1.0.0 should now be considered deprecated and
+  no longer supported.  All bug fixes and features will be only added
+  to the 1.0.0 tree.
+
+### Upgrade and Migration
+- For upgrades to 1.0.0, the `deltafi-passthrough` plugin flows should be disabled
+  and the plugin should be uninstalled.  The plugin is now built-in and the external
+  plugin will cause conflicts.  This is not a concern for new installations
+
 ## [1.0.0-RC8] - 2023-06-19
 
 ### Added
 - Include the resume policy name when retrieving snapshots in the CLI and GUI
-
-### Fixed
-- Fixed css removing all icons from buttons 
-- Return a mutable list when migrating enrichment to enrichments
-- Fix the UnsupportedOperationException when max errors are set on both ingress and transform flows
-
-## [1.0.0-RC7] - 2023-06-15
-
-### Added
 - Registry chart has an enabled flag
 
 ### Changed
 - Registry is disabled by default
 
 ### Fixed
-- UI: CSS text alignment fix for buttons without icons.
-- CLI: Fixed bug in install command resulting in `command not found` error message.
+- Fixed css removing all icons from buttons
+- Return a mutable list when migrating enrichment to enrichments
+- Fix the UnsupportedOperationException when max errors are set on both ingress and transform flows
+- UI: CSS text alignment fix for buttons without icons
+- CLI: Fixed bug in install command resulting in `command not found` error message
 
 ## [1.0.0-RC6] - 2023-06-15
 
 ### Added
-- UI now displays deleteMetadataKeys in metadata viewer for each Action 
-- UI: Added loading indicator to "Acknowledge All" button in Notifications panel.
+- UI now displays deleteMetadataKeys in metadata viewer for each Action
+- UI: Added loading indicator to "Acknowledge All" button in Notifications panel
 
 ### Changed
 - The `NoEgressFlowConfiguredAction` error can now be auto resumed
@@ -39,8 +48,8 @@ All [Unreleased] changes can be viewed in GitLab.
 
 ### Fixed
 - Fixed css issues with new datepicker component used in search page and events page
-- Fixed file upload and metadata buttons css issues on delta file upload page.
-- Fixed warnings in JS console on Errors Page being thrown by acknowledged expecting Boolean got Undefined bug. 
+- Fixed file upload and metadata buttons css issues on delta file upload page
+- Fixed warnings in JS console on Errors Page being thrown by acknowledged expecting Boolean got Undefined bug
 - Bug with base64 on Linux in kind/cluster (-w flag default differs between OSes)
 - Fix issue with generics that always assigned the first generic type found to ActionParameters class causing Jackson serialization issues
 - KinD: Add subdirectories needed for registry cleanup jobs
@@ -61,8 +70,8 @@ All [Unreleased] changes can be viewed in GitLab.
 ## [1.0.0-RC5] - 2023-06-12
 
 ### Added
-- Updated the date/component on the Search Page.
-- Updated calendar component on Events Page 
+- Updated the date/component on the Search Page
+- Updated calendar component on Events Page
 - Added a `deltafi disable` command that disables all DeltaFi processes
 - Added a `deltafi reenable` command that reenables all DeltaFi processes
 - Added a `deltafi scale` command that allows you to edit the replica counts across all deployments and statefulsets and then apply the changes
@@ -79,22 +88,24 @@ All [Unreleased] changes can be viewed in GitLab.
 - Renamed the `compose stop-service` command to `compose stop-services`
 
 ### Fixed
-- The core now performs an extra check for every requeued DeltaFile to ensure it is not already in the queue. The redis ZSET already checks for exact matches, but in cases where a different returnAddress is used there were still opportunities for duplication. 
+- The core now performs an extra check for every requeued DeltaFile to ensure it is not already in the
+  queue. The redis ZSET already checks for exact matches, but in cases where a different returnAddress
+  is used there were still opportunities for duplication
 
 ### Removed
 - Removed unused `time` field from ActionEvent
 
 ### Tech-Debt/Refactor
-- Refactored the Search Page. 
-- Removed items from the deltafi-cli/config.template that should not be configurable 
+- Refactored the Search Page
+- Removed items from the deltafi-cli/config.template that should not be configurable
 - Renamed enrichment to enrichments
 - JSON object serialization/deserialization for Redis data moved to ActionEventQueue
 - Additional tests for handling invalid ActionEvents
 - DeltaFile: Merge formatted data content and metadata into actions
-- Handle multiple format actions in the DeltaFile actions array. This is prep work to allow for more flexible resume scenarios.
+- Handle multiple format actions in the DeltaFile actions array. This is prep work to allow for more flexible resume scenarios
 
 ### Upgrade and Migration
-- The python plugin method has changed, the description is now the first argument followed by optional arguments.
+- The python plugin method has changed, the description is now the first argument followed by optional arguments
   ```python
   # Before
    Plugin([
@@ -128,7 +139,7 @@ All [Unreleased] changes can be viewed in GitLab.
      setEgressFlowExpectedAnnotations(flowName:"passthrough", expectedAnnotations:["readBy", "readAt"])
    }
    ```
-- Serialized Errors Page State 
+- Serialized Errors Page State
 - Transform and Load actions can delete metadata
 - Allow Tranform and Load Actions to create annotations (formerly known as indexed metadata)
 - Add stricter validation for events received by core from actions
@@ -137,7 +148,7 @@ All [Unreleased] changes can be viewed in GitLab.
 - View All Metadata dialog now uses new top-level metadata key to display cumulative metadata
 - System Overview dashboard limits list of ingress and egress flow totals to 10 items each
 - Delete policies will not remove a `DeltaFile` until all expected annotations have been set
-- Updated UI libraries.
+- Updated UI libraries
 - Use `errorCause` and `errorContext` to detail an invalid action event, and verify in test
 - Loki retention rules limit retention of noisy cruft logs
 - Ensure mongo migrations are only run once
@@ -1900,7 +1911,8 @@ No changes.  UI update only
 ### Security
 - Forced all projects to log4j 2.17.0 to avoid CVEs
 
-[Unreleased]: https://gitlab.com/deltafi/deltafi/-/compare/1.0.0-RC8...main
+[Unreleased]: https://gitlab.com/deltafi/deltafi/-/compare/1.0.0...main
+[1.0.0]: https://gitlab.com/deltafi/deltafi/-/compare/1.0.0-RC8...1.0.0
 [1.0.0-RC8]: https://gitlab.com/deltafi/deltafi/-/compare/1.0.0-RC7...1.0.0-RC8
 [1.0.0-RC7]: https://gitlab.com/deltafi/deltafi/-/compare/1.0.0-RC6...1.0.0-RC7
 [1.0.0-RC6]: https://gitlab.com/deltafi/deltafi/-/compare/1.0.0-RC5...1.0.0-RC6
