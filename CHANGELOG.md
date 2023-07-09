@@ -5,7 +5,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/)
 
 All [Unreleased] changes can be viewed in GitLab.
 
-## [1.0.3] - 2023-07-08
+## [1.0.4] - 2023-07-09
 
 ### Added
 - Added the ability to CRUD expected annotations on transform and egress flows from the GUI 
@@ -1993,8 +1993,8 @@ No changes.  UI update only
 ### Security
 - Forced all projects to log4j 2.17.0 to avoid CVEs
 
-[Unreleased]: https://gitlab.com/deltafi/deltafi/-/compare/1.0.3...main
-[1.0.3]: https://gitlab.com/deltafi/deltafi/-/compare/1.0.2...1.0.3
+[Unreleased]: https://gitlab.com/deltafi/deltafi/-/compare/1.0.4...main
+[1.0.4]: https://gitlab.com/deltafi/deltafi/-/compare/1.0.2...1.0.4
 [1.0.2]: https://gitlab.com/deltafi/deltafi/-/compare/1.0.1...1.0.2
 [1.0.1]: https://gitlab.com/deltafi/deltafi/-/compare/1.0.0...1.0.1
 [1.0.0]: https://gitlab.com/deltafi/deltafi/-/compare/1.0.0-RC8...1.0.0
