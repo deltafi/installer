@@ -10,36 +10,36 @@ deltafi:
     trustStoreName: trustStore.jks
     trustStoreType: JKS
   core_actions:
-    image: deltafi/deltafi-core-actions:1.0.4
+    image: deltafi/deltafi-core-actions:1.0.5
   passthrough:
-    image: deltafi/deltafi-passthrough:1.0.4
+    image: deltafi/deltafi-passthrough:1.0.5
     enabled: true
   core:
-    image: deltafi/deltafi-core:1.0.4
+    image: deltafi/deltafi-core:1.0.5
     mongo_host: deltafi-mongodb
   docs:
-    image: deltafi/deltafi-docs:1.0.4
+    image: deltafi/deltafi-docs:1.0.5
     enabled: true
   ingress:
     envVar:
       HTTP_MAX_BODY_SIZE: 5G
   auth:
-    image: deltafi/deltafi-auth:1.0.4
+    image: deltafi/deltafi-auth:1.0.5
     mode: basic # basic, cert, or disabled
     secret: auth-secret
     entityResolver:
       enabled: false
-      image: deltafi/deltafi-entity-resolver:1.0.4
+      image: deltafi/deltafi-entity-resolver:1.0.5
       url: http://127.0.0.1:8080/
   api:
-    image: deltafi/deltafi-api:1.0.4
+    image: deltafi/deltafi-api:1.0.5
   ui:
-    image: deltafi/deltafi-ui:1.0.4
+    image: deltafi/deltafi-ui:1.0.5
   egress_sink:
     enabled: true
-    image: deltafi/deltafi-egress-sink:1.0.4
+    image: deltafi/deltafi-egress-sink:1.0.5
   nodemonitor:
-    image: deltafi/deltafi-nodemonitor:1.0.4
+    image: deltafi/deltafi-nodemonitor:1.0.5
     envVars:
       - name: GRAPHITE_HOST
         value: deltafi-graphite
@@ -387,7 +387,8 @@ graphite:
 docker-registry:
   enabled: false
   image:
-    tag: 2.8.2
+    repository: deltafi/registry
+    tag: latest #2.8.2-0
   persistence:
     enabled: true
     existingClaim: deltafi-docker-registry
@@ -396,7 +397,12 @@ docker-registry:
     create: true
   garbageCollect:
     enabled: true
-    schedule: "0 * * * *"
+    schedule: "*/15 * * * *"
+    deleteUntagged: true
+  configData:
+    storage:
+      cache:
+        blobdescriptor: ""
 
 registry-ui:
   enabled: false
