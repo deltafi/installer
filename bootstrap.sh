@@ -306,7 +306,7 @@ EOF
     info "Checking for necessary packages via apt/snap"
     ${SUDO} apt-get install -y ca-certificates curl
     ${SUDO} apt-get update
-    ${SUDO} apt-get install -y uidmap dbus-user-session fuse-overlayfs slirp4netns git wget snapd vim skopeo
+    ${SUDO} apt-get install -y uidmap dbus-user-session fuse-overlayfs slirp4netns git wget snapd vim tig skopeo
     if ! tool_exists kubectl; then
       ${SUDO} snap install --classic kubectl
       mkdir -p ~/.kube/kubens
@@ -323,7 +323,7 @@ EOF
     ${SUDO} ln -s /snap/bin/* /usr/local/bin || warn "All tools may not be configured correctly"
   elif tool_exists apk; then
     info "Checking for necessary packages via apk"
-    ${SUDO} apk add ncurses curl git wget vim kubectx helm yq skopeo
+    ${SUDO} apk add ncurses curl git wget vim tig tmux kubectx helm yq skopeo
     ${SUDO} apk add kubectl --repository=http://dl-cdn.alpinelinux.org/alpine/edge/testing/
   fi
 
