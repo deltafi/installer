@@ -4,7 +4,7 @@
 
 cli_help_command() {
   echo "
-Command: ingress-flow
+Command: normalize-flow
 
 Subcommands:
   start
@@ -12,11 +12,11 @@ Subcommands:
   validate
   show
 Usage:
-  ingress-flow [SUBCOMMAND] FLOW_NAME"
+  normalize-flow [SUBCOMMAND] FLOW_NAME"
   exit 1
 }
 
-TMPFILE="/tmp/.deltafi-ingress-flow.$$"
+TMPFILE="/tmp/.deltafi-normalize-flow.$$"
 
 cleanup() {
   rm -f $TMPFILE
@@ -56,21 +56,21 @@ FLOW_NAME=${ARGS[2]}
 VARIABLES="{\"flowName\": \"$FLOW_NAME\" }"
 case "$SUBCOMMAND" in
   start)
-    EXTRACT_PATH=".data.startIngressFlow"
-    QUERY="mutation(\$flowName: String!) { startIngressFlow(flowName: \$flowName) }"
+    EXTRACT_PATH=".data.startNormalizeFlow"
+    QUERY="mutation(\$flowName: String!) { startNormalizeFlow(flowName: \$flowName) }"
     ;;
   stop)
-    EXTRACT_PATH=".data.stopIngressFlow"
-    QUERY="mutation(\$flowName: String!) { stopIngressFlow(flowName: \$flowName) }"
+    EXTRACT_PATH=".data.stopNormalizeFlow"
+    QUERY="mutation(\$flowName: String!) { stopNormalizeFlow(flowName: \$flowName) }"
     ;;
   validate)
-    EXTRACT_PATH=".data.validateIngressFlow"
-    QUERY="query(\$flowName: String!) {validateIngressFlow(flowName: \$flowName) { flowStatus { state errors { configName errorType message } } } }"
+    EXTRACT_PATH=".data.validateNormalizeFlow"
+    QUERY="query(\$flowName: String!) {validateNormalizeFlow(flowName: \$flowName) { flowStatus { state errors { configName errorType message } } } }"
     ;;
   show)
-    EXTRACT_PATH=".data.getIngressFlow"
+    EXTRACT_PATH=".data.getNormalizeFlow"
     QUERY="query(\$flowName: String!) {
-             getIngressFlow(flowName: \$flowName) {
+             getNormalizeFlow(flowName: \$flowName) {
                name
                description
                sourcePlugin {

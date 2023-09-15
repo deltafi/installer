@@ -4,10 +4,10 @@
 
 cli_help_command() {
   echo "
-Command: export-ingress-plan
+Command: export-normalize-plan
 
 Usage:
-  export-ingress-plan FLOW_PLAN_NAME"
+  export-normalize-plan FLOW_PLAN_NAME"
   exit 1
 }
 
@@ -25,7 +25,7 @@ QUERY="fragment ActionFields on ActionConfiguration {
         }
 
         query {
-          getIngressFlowPlan(planName: \"$PLANNAME\") {
+          getNormalizeFlowPlan(planName: \"$PLANNAME\") {
             name
             type
             description
@@ -47,8 +47,8 @@ QUERY="fragment ActionFields on ActionConfiguration {
 RESULT=$(deltafi query "$QUERY")
 DGS_ERRORS=$(echo $RESULT | jq -r "select(.errors) | .errors[] | .message")
 if [[ "$DGS_ERRORS" != "" ]]; then
-  cli_log "${red}${BASENAME}: Failed to export ingress flow plan: $PLANNAME${normal}"
+  cli_log "${red}${BASENAME}: Failed to export normalize flow plan: $PLANNAME${normal}"
   echo -e "${red}Error: ${DGS_ERRORS}${normal}"
 else
-  echo "$RESULT" | jq '.data.getIngressFlowPlan'
+  echo "$RESULT" | jq '.data.getNormalizeFlowPlan'
 fi
