@@ -141,7 +141,7 @@ initContainers:
 - name: MINIO_URL
   value: http://deltafi-minio:9000
 - name: MINIO_PARTSIZE
-  value: "10000000"
+  value: "5242880"
 - name: REDIS_URL
   value: http://deltafi-redis-master:6379
 - name: REDIS_PASSWORD
@@ -183,7 +183,7 @@ initContainers:
   valueFrom:
     secretKeyRef:
       name: mongodb-passwords
-      key: mongodb-password
+      key: mongodb-passwords
 {{- end -}}
 
 {{- define "clickhouseEnvVars" -}}
