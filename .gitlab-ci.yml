@@ -5,7 +5,7 @@ stages:
 default:
   timeout: 45m
 
-image: deltafi/deltafi-build:jdk17-2
+image: deltafi/deltafi-build:jdk21-python3-0
 
 build:
   stage: build
