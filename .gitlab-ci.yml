@@ -35,7 +35,8 @@ build:
     - cp -rf ${CI_BUILDS_DIR}/deltafi-pristine/bootstrap*.sh .
     - cp -rf ${CI_BUILDS_DIR}/deltafi-pristine/LICENSE .
     - cp -rf ${CI_BUILDS_DIR}/deltafi-pristine/CHANGELOG.md .
-    - cp -rf ${CI_BUILDS_DIR}/deltafi-pristine/utils .
+    - cp -rf ${CI_BUILDS_DIR}/deltafi-pristine/bin .
+    - cp -rf ${CI_BUILDS_DIR}/deltafi-pristine/utils/* utils
     - cd utils
     - ./build-self-extracting-installer.sh
     - cd ..
