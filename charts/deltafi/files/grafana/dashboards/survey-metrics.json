@@ -4,26 +4,48 @@
       {
         "builtIn": 1,
         "datasource": {
-          "type": "datasource",
-          "uid": "grafana"
+          "type": "grafana",
+          "uid": "-- Grafana --"
         },
         "enable": true,
         "hide": true,
-        "iconColor": "yellow",
+        "iconColor": "rgba(0, 211, 255, 1)",
         "name": "Annotations & Alerts",
         "target": {
           "limit": 100,
           "matchAny": false,
           "tags": [
+            "DeltaFi",
+            "DEPRECATED"
+          ],
+          "type": "dashboard"
+        },
+        "type": "dashboard"
+      },
+      {
+        "datasource": {
+          "type": "datasource",
+          "uid": "grafana"
+        },
+        "enable": true,
+        "hide": false,
+        "iconColor": "orange",
+        "name": "Global events",
+        "target": {
+          "fromAnnotations": true,
+          "limit": 200,
+          "matchAny": true,
+          "queryType": "annotations",
+          "tags": [
+            "Global",
             "DeltaFi"
           ],
           "type": "tags"
-        },
-        "type": "dashboard"
+        }
       }
     ]
   },
-  "description": "Summary dashboard for survey metrics",
+  "description": "Summary dashboard for survey metrics.  Deprecated in favor of api/v1/survey annotated metric API.",
   "editable": false,
   "fiscalYearStartMonth": 0,
   "graphTooltip": 1,
@@ -66,7 +88,7 @@
       },
       "id": 87,
       "panels": [],
-      "title": "Survey Flow Summary",
+      "title": "Survey Flow Summary [DEPRECATED]",
       "type": "row"
     },
     {
@@ -922,7 +944,7 @@
     ]
   },
   "timezone": "",
-  "title": "Survey Metrics",
+  "title": "Survey Metrics [DEPRECATED]",
   "uid": "survey-metrics",
   "version": 2,
   "weekStart": ""
