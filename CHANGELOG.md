@@ -5,9 +5,11 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/)
 
 All [Unreleased] changes can be viewed in GitLab.
 
-## [2.0-rc5] - 2024-07-11
+## [1.2.12] - 2024-07-12
 
 ### Added
+- CLI: list-ingress-actions command added
+- CLI: ingress-action command added
 - compose script now has a 'build' target that will build all core docker images.  Useful for running compose with snapshots
 - Autodetect Linux and MacOS in compose script
 - Added destroy command to compose script
@@ -16,10 +18,12 @@ All [Unreleased] changes can be viewed in GitLab.
 - Added restart policies for compose services
 
 ### Changed
+- CLI: Modified list-flows to list timedIngress flows
 - Compose script now creates data directories with the correct permissions
 
 ### Fixed
 - Fixed bug that prevented plugins from being upgraded when running in compose
+- CLI: `deltafi install` will return an error when it fails
 
 ### Upgrade and Migration
 - Use bitnami/redis:7.2.5 in compose stack and kubernetes
@@ -3004,8 +3008,8 @@ No changes.  UI update only
 ### Security
 - Forced all projects to log4j 2.17.0 to avoid CVEs
 
-[Unreleased]: https://gitlab.com/deltafi/deltafi/-/compare/2.0-rc5...main
-[2.0-rc5]: https://gitlab.com/deltafi/deltafi/-/compare/1.2.11...2.0-rc5
+[Unreleased]: https://gitlab.com/deltafi/deltafi/-/compare/1.2.12...main
+[1.2.12]: https://gitlab.com/deltafi/deltafi/-/compare/1.2.11...1.2.12
 [1.2.11]: https://gitlab.com/deltafi/deltafi/-/compare/1.2.10...1.2.11
 [1.2.10]: https://gitlab.com/deltafi/deltafi/-/compare/1.2.9...1.2.10
 [1.2.9]: https://gitlab.com/deltafi/deltafi/-/compare/1.2.8...1.2.9
